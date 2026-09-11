@@ -94,6 +94,7 @@ def clean_text(
     remove_stopwords_flag: bool = True,
     lemmatize_flag: bool = True,
     remove_nums: bool = False,
+    _preloaded_stopwords: Optional[set] = None,
 ) -> str:
     if not isinstance(text, str):
         return ""
@@ -108,7 +109,8 @@ def clean_text(
     text = remove_extra_whitespace(text)
 
     if remove_stopwords_flag:
-        text = remove_stopwords(text)
+        sw = _preloaded_stopwords if _preloaded_stopwords is not None else get_stopwords()
+        text = remove_stopwords(text, sw)
 
     if lemmatize_flag:
         text = lemmatize_text(text)
@@ -125,33 +127,28 @@ def clean_dataframe(
     lemmatize_flag: bool = True,
     remove_nums: bool = False,
 ) -> pd.DataFrame:
+    """Aplica limpeza de texto a uma coluna do DataFrame.
+
+    Reutiliza clean_text() internamente para garantir consistência.
+    Pré-carrega stopwords para evitar I/O repetido.
+    """
     df = df.copy()
 
     if output_col is None:
         output_col = text_col
 
     download_nltk_resources()
-    stop_words = get_stopwords()
+    stop_words = get_stopwords() if remove_stopwords_flag else None
 
-    def _apply_clean(text):
-        if not isinstance(text, str):
-            return ""
-        t = to_lowercase(text)
-        t = remove_html_tags(t)
-        t = remove_urls(t)
-        t = remove_emails(t)
-        if remove_nums:
-            t = remove_numbers(t)
-        t = remove_punctuation(t)
-        t = remove_extra_whitespace(t)
-        if remove_stopwords_flag:
-            t = remove_stopwords(t, stop_words)
-        if lemmatize_flag:
-            t = lemmatize_text(t)
-        t = remove_extra_whitespace(t)
-        return t
-
-    df[output_col] = df[text_col].apply(_apply_clean)
+    df[output_col] = df[text_col].apply(
+        lambda text: clean_text(
+            text,
+            remove_stopwords_flag=remove_stopwords_flag,
+            lemmatize_flag=lemmatize_flag,
+            remove_nums=remove_nums,
+            _preloaded_stopwords=stop_words,
+        )
+    )
     return df
 
 
