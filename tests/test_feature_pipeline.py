@@ -1,7 +1,3 @@
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import pytest
 import pandas as pd
@@ -30,25 +26,56 @@ from sources.config import (
 def sample_texts():
     return pd.Series(
         [
+            # Urgente (2) - 12 amostras
             "acute myocardial infarction chest pain urgent angioplasty",
+            "cardiac arrest cpr resuscitation icu admission emergency",
+            "colon cancer chemotherapy oncology treatment urgent metastasis",
+            "brain tumor mri scan biopsy surgical resection oncology",
+            "lung cancer radiation therapy staging prognosis malignant",
+            "breast cancer mastectomy sentinel node chemotherapy urgent",
+            "aortic dissection emergency surgery cardiovascular critical",
+            "ventricular fibrillation defibrillation cardiac icu monitoring",
+            "leukemia bone marrow transplant hematology oncology treatment",
+            "melanoma excision lymph node dissection immunotherapy urgent",
+            "heart failure cardiogenic shock inotropic support ventilator",
+            "pancreatic cancer whipple procedure oncology palliative care",
+            # Normal (0) - 12 amostras
             "chronic gastritis proton pump inhibitor dietary changes",
+            "stomach ulcer endoscopy treatment hospital discharge oral",
+            "esophageal varices sclerotherapy cirrhosis management hepatic",
+            "diverticulitis antibiotics oral diet rest colon recovery",
+            "irritable bowel syndrome fiber supplement lifestyle changes",
+            "gastroesophageal reflux antacid medication dietary modification",
+            "hemorrhoids conservative treatment topical cream outpatient",
+            "celiac disease gluten free diet nutritional counseling",
+            "lactose intolerance dietary restriction enzyme supplement oral",
+            "functional dyspepsia lifestyle modification prokinetic agent",
+            "mild hepatitis monitoring liver function outpatient followup",
+            "gallstones elective cholecystectomy outpatient scheduled surgery",
+            # Atenção (1) - 12 amostras
             "migraine headache dizziness nausea neurological evaluation",
             "stroke patient neurological rehabilitation outpatient follow up",
-            "stomach ulcer endoscopy treatment hospital discharge",
-            "cardiac arrest cpr resuscitation icu admission",
             "diabetes mellitus insulin therapy blood glucose monitoring",
-            "esophageal varices sclerotherapy cirrhosis management",
-            "brain tumor mri scan biopsy surgical resection",
             "hypertension medication ambulatory blood pressure control",
-            "colon cancer chemotherapy oncology treatment urgent",
-            "diverticulitis antibiotics oral diet rest",
+            "pneumonia antibiotics respiratory infection fever cough",
+            "renal failure dialysis creatinine nephrology electrolyte",
+            "epilepsy anticonvulsant medication neurology follow up eeg",
+            "multiple sclerosis immunomodulatory therapy neurological exam",
+            "parkinsons disease dopamine therapy movement disorder clinic",
+            "chronic kidney disease nephrology monitoring creatinine gfr",
+            "anemia iron supplementation hematology outpatient monitoring",
+            "thyroid disorder levothyroxine endocrinology follow up labs",
         ]
     )
 
 
 @pytest.fixture
 def sample_labels():
-    return pd.Series([2, 0, 1, 1, 0, 2, 1, 0, 2, 1, 2, 0])
+    return pd.Series(
+        [2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,   # 12 urgente
+         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,   # 12 normal
+         1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]    # 12 atenção
+    )
 
 
 @pytest.fixture
