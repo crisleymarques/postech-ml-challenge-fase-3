@@ -23,6 +23,7 @@ from sources.config import (
     MODELS_DIR,
     DOCS_DIR,
     URGENCY_MAPPING_DOC,
+    setup_dirs,
 )
 from pipelines.feature_pipeline import (
     split_dataframe,
@@ -283,6 +284,7 @@ def step_7_demo_prediction(full_pipeline):
 
 
 def run_full_pipeline(model_name: str = "logistic_regression", lemmatize: bool = False):
+    setup_dirs()
     train_raw, test_raw = step_1_load_and_validate()
     train_mapped, test_mapped = step_2_map_urgency(train_raw, test_raw)
     clean_df = step_3_preprocess(train_mapped, test_mapped, lemmatize=lemmatize)

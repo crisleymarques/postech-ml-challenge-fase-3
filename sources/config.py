@@ -92,5 +92,9 @@ TFIDF_MAX_DF = 0.95
 
 STOPWORDS_LANG = "english"
 
-os.makedirs(DATA_PROCESSED_DIR, exist_ok=True)
-os.makedirs(MODELS_DIR, exist_ok=True)
+
+def setup_dirs():
+    """Cria diretórios necessários para o pipeline. Deve ser chamada explicitamente."""
+    os.makedirs(DATA_PROCESSED_DIR, exist_ok=True)
+    os.makedirs(MODELS_DIR, exist_ok=True)
+    os.makedirs(DOCS_DIR, exist_ok=True)
