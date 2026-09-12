@@ -14,3 +14,13 @@ uvicorn[standard]>=0.24.0
 pydantic>=2.0.0
 pydantic-settings>=2.0.0
 httpx>=0.25.0
+pyarrow>=10.0.0
+
+# =============================================================================
+# OPCIONAL: Apache Airflow (recomendado usar via docker-compose-airflow.yml)
+# Descomente abaixo apenas se deseja instalar localmente (pode gerar conflitos
+# de dependencias; prefira a imagem oficial apache/airflow via compose).
+# =============================================================================
+# apache-airflow>=2.10.2
+# apache-airflow-providers-postgres>=5.0.0
+# psycopg2-binary>=2.9.0

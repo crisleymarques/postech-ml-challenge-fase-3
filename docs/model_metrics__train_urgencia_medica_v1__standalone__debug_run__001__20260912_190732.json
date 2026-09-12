@@ -1,0 +1,86 @@
+{
+  "model_name": "logistic_regression",
+  "metrics": {
+    "model_name": "logistic_regression",
+    "n_test_samples": 2888,
+    "accuracy": 0.6898,
+    "precision_macro": 0.6484,
+    "recall_macro": 0.7058,
+    "f1_macro": 0.6675,
+    "precision_weighted": 0.7025,
+    "recall_weighted": 0.6898,
+    "f1_weighted": 0.6925,
+    "classification_report": {
+      "normal": {
+        "precision": 0.49122807017543857,
+        "recall": 0.7491638795986622,
+        "f1-score": 0.5933774834437087,
+        "support": 299.0
+      },
+      "atencao": {
+        "precision": 0.7251028806584362,
+        "recall": 0.6545319465081724,
+        "f1-score": 0.6880124951190941,
+        "support": 1346.0
+      },
+      "urgente": {
+        "precision": 0.7288414133114215,
+        "recall": 0.7135961383748994,
+        "f1-score": 0.7211382113821139,
+        "support": 1243.0
+      },
+      "accuracy": 0.6897506925207756,
+      "macro avg": {
+        "precision": 0.6483907880484322,
+        "recall": 0.705763988160578,
+        "f1-score": 0.6675093966483056,
+        "support": 2888.0
+      },
+      "weighted avg": {
+        "precision": 0.7024984581353214,
+        "recall": 0.6897506925207756,
+        "f1-score": 0.69247212005815,
+        "support": 2888.0
+      }
+    },
+    "classification_report_str": "              precision    recall  f1-score   support\n\n      normal       0.49      0.75      0.59       299\n     atencao       0.73      0.65      0.69      1346\n     urgente       0.73      0.71      0.72      1243\n\n    accuracy                           0.69      2888\n   macro avg       0.65      0.71      0.67      2888\nweighted avg       0.70      0.69      0.69      2888\n",
+    "confusion_matrix": [
+      [
+        224,
+        47,
+        28
+      ],
+      [
+        163,
+        881,
+        302
+      ],
+      [
+        69,
+        287,
+        887
+      ]
+    ],
+    "confusion_labels": [
+      "normal",
+      "atencao",
+      "urgente"
+    ],
+    "roc_auc_ovr": 0.8433
+  },
+  "artifact": "C:\\FIAP\\Fase3\\postech-ml-challenge-fase-3\\models\\urgency_classifier__train_urgencia_medica_v1__standalone__debug_run__001__20260912_190732.joblib",
+  "artifact_latest": "C:\\FIAP\\Fase3\\postech-ml-challenge-fase-3\\models\\urgency_classifier.joblib",
+  "airflow_dag_id": "train_urgencia_medica_v1",
+  "airflow_run_id": "standalone__debug_run__001",
+  "saved_at": "2026-09-12T19:07:32.834855+00:00",
+  "target_counts": {
+    "0": 1494,
+    "1": 6730,
+    "2": 6214
+  },
+  "target_names": {
+    "0": "normal",
+    "1": "atencao",
+    "2": "urgente"
+  }
+}

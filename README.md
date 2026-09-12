@@ -20,7 +20,8 @@ postech-ml-challenge-fase-3/
 │   └── processed/              # Dados processados e splits (gitignored)
 ├── docs/
 │   ├── DATASET.md                # Documentação detalhada do dataset e mapeamentos
-│   └── BASELINE_LATENCY.md      # 🆕 Baseline oficial de latência da API
+│   ├── BASELINE_LATENCY.md      # Baseline oficial de latência da API
+│   └── AIRFLOW.md              # 🆕 Guia completo de orquestração Airflow
 ├── models/                       # Modelos gerados pelo pipeline (gitignored, .gitkeep)
 ├── notebooks/
 │   ├── EDA_Medical_Abstracts.ipynb # EDA completo (notebook)
@@ -53,17 +54,28 @@ postech-ml-challenge-fase-3/
 ├── .github/
 │   └── workflows/
 │       └── ci.yml             # GitHub Actions CI: lint, testes unitários, smoke tests, smoke API
-├── benchmarks/                     # 🆕 Baseline de latência + benchmark reproduzível
+├── airflow/                      # 🆕 Orquestração de treino/retreino com Apache Airflow
+│   ├── dags/
+│   │   └── train_urgencia_medica_dag.py   # DAG oficial de treinamento
+│   ├── plugins/
+│   │   └── airflow_ml_tasks.py            # Wrappers Python (reutiliza 100% sources/)
+│   ├── airflow-home/            # Configurações de runtime (gitignored)
+│   ├── airflow-logs/             # Logs das tasks (gitignored)
+│   ├── include/
+│   └── scripts/
+├── benchmarks/                     # Baseline de latência + benchmark reproduzível
 │   ├── __init__.py
 │   ├── baseline_latency.py    # Script de benchmark (CLI)
 │   ├── payloads.json       # 7 casos reais de laudos
 │   └── results/            # Resultados JSON salvos
 ├── run_pipeline.py               # Script orquestrador - executa todo o pipeline ML
-├── run_api.py                    # 🆕 Script rápido para subir a API (uvicorn reload)
-├── Dockerfile                    # 🆕 Container produção (Gunicorn + UvicornWorker, non-root)
-├── Dockerfile.dev                # 🆕 Container dev (uvicorn --reload)
-├── docker-compose.yml            # 🆕 Serviços: api / api-dev / benchmark
-├── .dockerignore                 # 🆕 Otimizado (exclui venv, data, models, .git)
+├── run_api.py                    # Script rápido para subir a API (uvicorn reload)
+├── Dockerfile                    # Container produção (Gunicorn + UvicornWorker, non-root)
+├── Dockerfile.dev                # Container dev (uvicorn --reload)
+├── docker-compose.yml            # Serviços: api / api-dev / benchmark
+├── docker-compose-airflow.yml    # 🆕 Serviços Airflow + PostgreSQL 16
+├── .airflow.env                  # 🆕 UID e credenciais default Airflow
+├── .dockerignore                 # Otimizado (exclui venv, data, models, .git)
 ├── requirements.txt              # Dependências do projeto (inclui FastAPI)
 └── README.md
 ```
@@ -554,10 +566,81 @@ benchmarks/
 
 ---
 
+## ✈️ Orquestração de Treinamento / Retreinamento com Airflow
+
+**Documentação completa e passo-a-passo**: 👉 **[docs/AIRFLOW.md](docs/AIRFLOW.md)**
+
+A DAG **`train_urgencia_medica_v1`** automatiza todo o ciclo de vida do modelo, desde o carregamento dos dados até a persistência de um artefato versionado e aprovado, **reutilizando 100% das funções** existentes em `sources/` e `pipelines/` (sem duplicar código).
+
+### Fluxo da DAG (6 tasks)
+
+```
+[setup_dirs] → [data_load_validate] → [preprocess_and_split] → [build_features_and_train] → [validate_metrics_thresholds (ShortCircuit)] → [persist_model_and_metrics]
+```
+
+### Principais Funcionalidades
+
+| Item | Descrição |
+|:-----|:----------|
+| **Idempotente / Retreinamento** | Cada run cria um `.joblib` **versionado** (`<DAG_ID>__<RUN_ID>__<timestamp>`). NUNCA sobrescreve artefatos antigos. Apenas `urgency_classifier.joblib` (latest) é atualizado para deploy. |
+| **Porta de Qualidade (ShortCircuit)** | O artefato SÓ é persistido se `accuracy` e `f1_macro` no teste ultrapassarem thresholds mínimos configuráveis via trigger JSON. |
+| **Retries / Resiliência** | 2 retries com exponential backoff (2–5 min), timeout global de 45 min por task, `max_active_runs=1`. |
+| **XCom inter-task** | Todas as tasks comunicam via `ti.xcom_pull(key="return_value")`, sem arquivos mágicos fora do padrão. |
+| **Parâmetros trigger (JSON)** | `model_name`, `lemmatize`, `remove_stopwords`, `tfidf_max_features`, `tfidf_ngram_range`, `min_f1_macro`, `min_accuracy`. |
+
+### Início Rápido (3 comandos)
+
+```bash
+# 1) Inicializar DB + admin (apenas 1ª vez):
+docker compose -f docker-compose-airflow.yml up airflow-init
+
+# 2) Subir Airflow (Postgres + Webserver + Scheduler)
+docker compose -f docker-compose-airflow.yml up -d
+
+# 3) Abrir UI
+#    URL:        http://localhost:8080
+#    Username:   admin
+#    Password:   admin
+```
+
+Na UI:
+1. Procure **`train_urgencia_medica_v1`** e ligue o toggle ON
+2. Clique em **Trigger DAG w/ config** para passar parâmetros JSON personalizados, ou **Trigger DAG** para defaults.
+3. Acompanhe em **Graph View** — após ~5–15 min (dependendo de lematização) os artefatos aparecem em `models/` e métricas em `docs/`.
+
+### Artefatos por Run
+
+Após uma execução aprovada, são criados:
+
+| Local | Ficheiro | Descrição |
+|:------|:---------|:----------|
+| `models/` | `urgency_classifier__<dag>__<run>__<ts>.joblib` | Versão imutável do pipeline completo (TF-IDF + Classifier) + metadata completa |
+| `models/` | `urgency_classifier.joblib` | Cópia da última versão aprovada — usada diretamente pela FastAPI |
+| `docs/` | `model_metrics__<dag>__<run>__<ts>.json` | Registo histórico imutável das métricas |
+| `docs/` | `model_metrics.json` | Último snapshot de métricas |
+
+> 💡 **Rollback manual fácil**: para reverter para um modelo anterior, basta copiar o `.joblib` da versão desejada para `urgency_classifier.joblib` e reiniciar a API.
+
+### Referência de Resultado (Validação Standalone)
+
+Execução debug standalone da DAG completa (LogReg, TF-IDF 5k features, sem lema):
+
+| Métrica | Valor |
+|:--------|:-----:|
+| Acurácia (teste 2888 amostras) | **0.6898** |
+| F1-macro (3 classes) | **0.6675** |
+| ROC-AUC OvR | **0.8433** |
+| Acurácia Val (durante treino) | 0.6939 |
+| F1-macro Val | 0.6667 |
+
+---
+
 ### Sugestão de próximas etapas (comparação de otimizações):
 
 1. `WORKERS=2`, `concurrency=2` → Throughput
 2. Converter sklearn → **ONNX Runtime**
 3. Desativar `return_probabilities` (código cliente)
 4. Docker em WSL2 ou Linux vs. Windows host
+5. **Sensor Airflow** para novo CSV em `data/raw/` → auto-trigger retreinamento (ex: `FileSensor`)
+6. **Callback de sucesso** Airflow → notificação email/Slack + deploy automático novo modelo latest para API
 
