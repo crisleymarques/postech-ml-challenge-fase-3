@@ -19,7 +19,8 @@ postech-ml-challenge-fase-3/
 │   └── raw/                      # Dataset original (3 arquivos CSV)
 │   └── processed/              # Dados processados e splits (gitignored)
 ├── docs/
-│   └── DATASET.md                # Documentação detalhada do dataset e mapeamentos
+│   ├── DATASET.md                # Documentação detalhada do dataset e mapeamentos
+│   └── BASELINE_LATENCY.md      # 🆕 Baseline oficial de latência da API
 ├── models/                       # Modelos gerados pelo pipeline (gitignored, .gitkeep)
 ├── notebooks/
 │   ├── EDA_Medical_Abstracts.ipynb # EDA completo (notebook)
@@ -52,8 +53,17 @@ postech-ml-challenge-fase-3/
 ├── .github/
 │   └── workflows/
 │       └── ci.yml             # GitHub Actions CI: lint, testes unitários, smoke tests, smoke API
+├── benchmarks/                     # 🆕 Baseline de latência + benchmark reproduzível
+│   ├── __init__.py
+│   ├── baseline_latency.py    # Script de benchmark (CLI)
+│   ├── payloads.json       # 7 casos reais de laudos
+│   └── results/            # Resultados JSON salvos
 ├── run_pipeline.py               # Script orquestrador - executa todo o pipeline ML
 ├── run_api.py                    # 🆕 Script rápido para subir a API (uvicorn reload)
+├── Dockerfile                    # 🆕 Container produção (Gunicorn + UvicornWorker, non-root)
+├── Dockerfile.dev                # 🆕 Container dev (uvicorn --reload)
+├── docker-compose.yml            # 🆕 Serviços: api / api-dev / benchmark
+├── .dockerignore                 # 🆕 Otimizado (exclui venv, data, models, .git)
 ├── requirements.txt              # Dependências do projeto (inclui FastAPI)
 └── README.md
 ```
@@ -374,3 +384,180 @@ O workflow em `.github/workflows/ci.yml` roda automaticamente em push/pull reque
 | **test** | Testes unitários com pytest em Python 3.10, 3.11, 3.12 (Ubuntu + 3.11 Windows) |
 | **pipeline-check** | Smoke test de carregamento dataset, criação TF-IDF, criação de classificador, clean_text |
 | **api-check** | 🔍 Validação da API: criação do app, rotas, 28 testes de API e teste E2E `/predict` com modelo dummy |
+
+---
+
+## 🐳 Docker (Containerização da API)
+
+### Pré-requisitos
+- **Docker Desktop** (Windows/macOS) ou **Docker Engine** (Linux) rodando
+- O modelo `models/urgency_classifier.joblib` deve existir (gerado por `python run_pipeline.py`)
+
+### Build + Execução Rápida (docker compose)
+
+```bash
+# Build + subir API em background
+docker compose up --build -d api
+
+# Ver logs
+docker compose logs -f api
+
+# Health check
+curl http://localhost:8000/health
+
+# Parar e remover
+docker compose down
+```
+
+A imagem expõe a API na **porta 8000**. Swagger UI em: `http://localhost:8000/docs`
+
+### Build Manual (sem docker compose)
+
+```bash
+# Build da imagem
+docker build -t postech-ml-challenge/api:latest .
+
+# Executar container (1 worker, 1 vCPU, 2GB RAM)
+docker run --rm -d --name urgencia-api \
+  -p 8000:8000 \
+  --cpus=1.0 \
+  --memory=2g \
+  -v ./models:/app/models:ro \
+  -v ./data:/app/data:ro \
+  -e WORKERS=1 \
+  -e WORKER_THREADS=4 \
+  postech-ml-challenge/api:latest
+```
+
+### Serviços do `docker-compose.yml`
+
+| Serviço | Imagem | Descrição | Porta |
+|:--------|:-------|:----------|:-----:|
+| **`api`** | `Dockerfile` (prod, `gunicorn + uvicorn worker`, não-root) | Servidor de produção | 8000:8000 |
+| `api-dev` | `Dockerfile.dev` (uvicorn --reload, hot reload) | Desenvolvimento | 8001:8000 |
+| `benchmark` | `python:3.11-slim` (executa `baseline_latency.py`) | Benchmark automático contra `api` após healthcheck | — |
+
+### Variáveis de Ambiente (container)
+
+Todas as configurações da API podem ser sobrescritas via `environment` no docker-compose
+ou `-e VAR=valor` no docker run:
+
+| Variável | Default | Descrição |
+|:---------|:--------|:----------|
+| `WORKERS` | `1` | Número de workers Gunicorn (escalar = maior throughput) |
+| `WORKER_THREADS` | `4` | Threads por worker |
+| `TIMEOUT` | `120` | Timeout de request em segundos |
+| `PORT` | `8000` | Porta interna do container |
+| `MODELS_DIR` | `/app/models` | Diretório com `.joblib` |
+| `REQUEST_TEXT_MIN_LENGTH` | `10` | Validação de tamanho mínimo de texto |
+| `REQUEST_TEXT_MAX_LENGTH` | `50000` | Validação de tamanho máximo |
+| `REQUEST_BATCH_MAX_ITEMS` | `100` | Limite de itens no endpoint `/predict/batch` |
+
+### Limites de Recursos (CPUs/Memória) configuráveis
+
+Por padrão a API `api` tem:
+```yaml
+cpus: 1.0
+mem_limit: 2g
+```
+
+Escolha valores diferentes via variáveis de ambiente (ex: 4 workers / 2 CPUs):
+```bash
+WORKERS=4 API_CPUS=2.0 docker compose up --build -d api
+```
+
+---
+
+## ⚖️ Baseline de Latência & Benchmark
+
+Documento completo (oficial) em: 👉 **[docs/BASELINE_LATENCY.md](docs/BASELINE_LATENCY.md)**
+
+Arquivo JSON bruto do resultado oficial V1:
+👉 `benchmarks/results/baseline_local_uvicorn_1w_c1.json`
+
+### Baseline V1 — Resultado Oficial (1 worker / 1 vCPU / concorrência=1)
+
+| Métrica | Valor |
+|:--------|:-----:|
+| **Média** | **3,52 ms** |
+| **P50 (mediana)** | **3,39 ms** |
+| **P90** | 4,18 ms |
+| **P95** | 4,39 ms |
+| **P99** | **4,97 ms** |
+| Mínimo | 2,78 ms |
+| Máximo | 29,54 ms |
+| **Throughput (RPS)** | **254,79 req/s** |
+| **Taxa de sucesso** | **100%** (1000/1000) |
+
+### Como Rodar o Benchmark
+
+#### Modo Docker (baseline reproduzível — recomendado)
+
+```bash
+# 1. Gere o modelo (uma vez):
+python run_pipeline.py --model logistic_regression
+
+# 2. Suba a API em container com 1 worker (baseline default):
+WORKERS=1 API_CPUS=1.0 docker compose up --build -d api
+
+# 3. Execute o benchmark (100 warm-up + 1000 requests, conc=1):
+python benchmarks/baseline_latency.py \
+  --url http://localhost:8000 \
+  --warmup 100 \
+  --requests 1000 \
+  --concurrency 1 \
+  --workers 1 \
+  --cpus "1.0" \
+  --output benchmarks/results/baseline_v2_docker.json
+```
+
+#### Modo Benchmark Service (tudo em container, só precisar do Docker)
+
+```bash
+# Sobe a API + roda benchmark automaticamente (aguarda healthcheck)
+docker compose up --build benchmark
+```
+
+#### Flags do `baseline_latency.py` (CLI completa):
+
+| Flag | Default | Descrição |
+|:-----|:--------|:----------|
+| `--url` | `http://localhost:8000` | URL base da API |
+| `--warmup` | `50` | Requisições de warm-up |
+| `--requests` | `500` | Requisições do benchmark real |
+| `--concurrency` | `1` | Nível de concorrência (1 = latência isolada; >1 = throughput) |
+| `--workers` | None | **Documentação apenas** — workers configurados (salvos no JSON) |
+| `--cpus` | None | **Documentação apenas** — CPUs alocadas (salvos no JSON) |
+| `--no-probabilities` | OFF | Não enviar `return_probabilities` |
+| `--output` | `benchmarks/results/baseline_<timestamp>.json` | Arquivo JSON de saída |
+| `--skip-warmup` | OFF | Pular warm-up |
+| `--timeout-health` | `120` | Segundos máximos aguardando `/health` ficar 200 |
+
+#### Concorrência alta (medir throughput):
+```bash
+# 2.000 requisições com 32 conexões simultâneas
+python benchmarks/baseline_latency.py \
+  --requests 2000 --concurrency 32 \
+  --output benchmarks/results/thr_c32.json
+```
+
+### Estrutura da Pasta de Benchmark
+
+```
+benchmarks/
+├── __init__.py
+├── baseline_latency.py     # CLI principal do benchmark
+├── payloads.json           # 7 casos reais (urgente / atenção / normal + 4 derivados)
+└── results/                 # Resultados JSON salvos
+    └── baseline_local_uvicorn_1w_c1.json   # Baseline oficial V1
+```
+
+---
+
+### Sugestão de próximas etapas (comparação de otimizações):
+
+1. `WORKERS=2`, `concurrency=2` → Throughput
+2. Converter sklearn → **ONNX Runtime**
+3. Desativar `return_probabilities` (código cliente)
+4. Docker em WSL2 ou Linux vs. Windows host
+
