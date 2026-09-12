@@ -95,6 +95,8 @@ Justificativas completas em [docs/DATASET.md](docs/DATASET.md).
 
 ---
 
+<!-- ![CI Status](https://github.com/crisleymarques/postech-ml-challenge-fase-3/actions/workflows/ci.yml/badge.svg) -->
+
 ## Como Executar
 
 ### 1. Instalar dependências
