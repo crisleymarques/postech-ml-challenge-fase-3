@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sys
 import logging
+import time
 from pathlib import Path
 from datetime import datetime, timezone
 from contextlib import asynccontextmanager
@@ -10,7 +11,7 @@ from typing import Dict, Any
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from fastapi import FastAPI, Depends, Request, status
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 
 from app.config import settings
 from app.schemas import (
@@ -26,7 +27,12 @@ from app.services.model_service import (
     InvalidTextError,
 )
 from app.exceptions import register_exception_handlers
-
+from app.metrics import (
+    observe_http_request,
+    update_model_loaded_state,
+    render_metrics,
+    get_prometheus_content_type,
+)
 
 logging.basicConfig(
     level=logging.INFO if not settings.debug else logging.DEBUG,
@@ -43,11 +49,17 @@ async def lifespan(app: FastAPI):
         if model_svc.model_file_exists():
             logger.info("Arquivo de modelo detectado. Carregando modelo na inicializacao...")
             model_svc.load_model(force=True)
+            update_model_loaded_state(
+                loaded=True,
+                model_name=model_svc.metadata.get("model_name", settings.model_name),
+                metadata=model_svc.metadata,
+            )
             logger.info(
                 "Modelo carregado com sucesso (versao=%s). API pronta.",
                 model_svc.metadata.get("model_name", settings.model_name),
             )
         else:
+            update_model_loaded_state(loaded=False, model_name=settings.model_name)
             logger.warning(
                 "Arquivo de modelo NAO encontrado em %s. "
                 "Execute run_pipeline.py para gerar o modelo. "
@@ -55,10 +67,59 @@ async def lifespan(app: FastAPI):
                 settings.classifier_path,
             )
     except Exception as exc:
+        update_model_loaded_state(loaded=False, model_name=settings.model_name)
         logger.error("Falha durante o carregamento inicial do modelo: %s", exc)
     yield
     logger.info("API encerrando...")
     model_svc.unload()
+    update_model_loaded_state(loaded=False, model_name=settings.model_name)
+
+
+def _resolve_route_template(request: Request) -> str:
+    """Resolve o template da rota (evita alta cardinalidade com path params)."""
+    try:
+        route = request.scope.get("route")
+        if route is not None and hasattr(route, "path"):
+            return str(route.path)
+    except Exception:
+        pass
+    raw = request.url.path or ""
+    prefix = settings.api_prefix
+    if raw.startswith(f"{prefix}/predict/"):
+        return f"{prefix}/predict/*"
+    if raw == prefix or raw == f"{prefix}/":
+        return f"{prefix}/"
+    return raw
+
+
+def _register_prometheus_middleware(app: FastAPI) -> None:
+    @app.middleware("http")
+    async def _http_observability_middleware(request: Request, call_next):
+        # Skip o proprio /metrics (evita auto-referencia / alta cardinalidade)
+        skip = (request.method.upper() == "GET" and request.url.path == "/metrics")
+        started = time.perf_counter()
+        status_code = 500
+        try:
+            response = await call_next(request)
+            status_code = int(response.status_code)
+            return response
+        except Exception as exc:
+            status_code = 500
+            raise exc
+        finally:
+            if not skip:
+                duration = max(0.0, time.perf_counter() - started)
+                method = request.method.upper()
+                endpoint = _resolve_route_template(request)
+                try:
+                    observe_http_request(
+                        method=method,
+                        endpoint=endpoint,
+                        status_code=status_code,
+                        duration_seconds=duration,
+                    )
+                except Exception as exc_observer:  # pragma: no cover
+                    logger.debug("observe_http_request falhou: %s", exc_observer)
 
 
 def create_app() -> FastAPI:
@@ -69,13 +130,15 @@ def create_app() -> FastAPI:
             "API de triagem automatica de urgencia em laudos medicos. "
             "Recebe o texto do laudo e retorna a classificacao de urgencia "
             "(normal / atencao / urgente) utilizando um modelo NLP leve treinado "
-            "sobre o Medical Abstracts TC Corpus Dataset."
+            "sobre o Medical Abstracts TC Corpus Dataset. Exibe metricas Prometheus "
+            "em /metrics."
         ),
         docs_url=settings.docs_url,
         redoc_url=settings.redoc_url,
         openapi_url=settings.openapi_url,
         lifespan=lifespan,
     )
+    _register_prometheus_middleware(app)
     register_exception_handlers(app)
     _register_routes(app)
     return app
@@ -83,6 +146,30 @@ def create_app() -> FastAPI:
 
 def _register_routes(app: FastAPI) -> None:
     prefix = settings.api_prefix
+
+    @app.get(
+        "/metrics",
+        summary="Metricas Prometheus",
+        description=(
+            "Expõe todas as métricas de observabilidade (requests, latência, "
+            "erros, inferências, estado do modelo) no formato texto padrão "
+            "do Prometheus (exposition format 0.0.4)."
+        ),
+        responses={
+            200: {
+                "description": "Metricas Prometheus",
+                "content": {"text/plain": {}},
+            },
+        },
+        tags=["Observabilidade"],
+    )
+    async def metrics() -> Response:
+        payload = render_metrics()
+        return Response(
+            content=payload,
+            media_type=get_prometheus_content_type(),
+            status_code=status.HTTP_200_OK,
+        )
 
     @app.get(
         f"{prefix}/health",
@@ -133,7 +220,9 @@ def _register_routes(app: FastAPI) -> None:
         summary="Classificar urgencia de 1 laudo",
         description=(
             "Recebe o texto de um laudo medico e retorna sua classificacao "
-            "de urgencia, com probabilidades opcionais por classe."
+            "de urgencia, com probabilidades opcionais por classe. "
+            "Atualiza automaticamente as metricas Prometheus: "
+            "inference_predictions_total, inference_latency_seconds, etc."
         ),
         responses={
             200: {"description": "Classificacao realizada com sucesso"},
@@ -168,7 +257,8 @@ def _register_routes(app: FastAPI) -> None:
         summary="Classificar urgencia de varios laudos em lote",
         description=(
             "Recebe uma lista de laudos medicos e retorna a classificacao "
-            "individual de cada um. Limite maximo de 100 itens por requisicao."
+            "individual de cada um. Limite maximo de 100 itens por requisicao. "
+            "Atualiza automaticamente as metricas Prometheus por item processado."
         ),
         responses={
             200: {"description": "Lote processado com sucesso"},
@@ -216,8 +306,10 @@ def _register_routes(app: FastAPI) -> None:
             "docs": settings.docs_url,
             "redoc": settings.redoc_url,
             "health": f"{prefix}/health",
+            "metrics": "/metrics",
             "endpoints": {
                 "health": f"{prefix}/health",
+                "metrics": "GET /metrics",
                 "predict_single": f"POST {prefix}/predict",
                 "predict_batch": f"POST {prefix}/predict/batch",
             },

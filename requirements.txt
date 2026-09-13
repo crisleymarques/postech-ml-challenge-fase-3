@@ -15,6 +15,7 @@ pydantic>=2.0.0
 pydantic-settings>=2.0.0
 httpx>=0.25.0
 pyarrow>=10.0.0
+prometheus_client>=0.20.0
 
 # =============================================================================
 # OPCIONAL: Apache Airflow (recomendado usar via docker-compose-airflow.yml)

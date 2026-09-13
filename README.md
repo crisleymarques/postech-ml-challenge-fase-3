@@ -37,10 +37,11 @@ postech-ml-challenge-fase-3/
 │   └── feature_pipeline.py       # TF-IDF, splits de dados, salvamento/carregamento
 ├── app/                            # 🆕 Aplicação FastAPI (inferência em produção)
 │   ├── __init__.py
-│   ├── main.py                 # Aplicação FastAPI + rotas
+│   ├── main.py                 # Aplicação FastAPI + rotas + middleware Prometheus
 │   ├── config.py               # Configurações da API (pydantic-settings)
 │   ├── schemas.py              # Schemas de entrada, respostas e erros (Pydantic v2)
 │   ├── exceptions.py           # Handlers de erros formatados (sem stack trace!)
+│   ├── metrics.py              # 🆕 10 métricas Prometheus (HTTP + inferência + modelo)
 │   └── services/
 │       ├── __init__.py
 │       └── model_service.py    # Singleton: carregamento e inferência do modelo
@@ -50,7 +51,8 @@ postech-ml-challenge-fase-3/
 │   ├── test_preprocessing.py
 │   ├── test_feature_pipeline.py
 │   ├── test_model.py
-│   └── test_api.py             # 🆕 28 testes unitários + integrados da API
+│   ├── test_api.py             # 28 testes unitários + integrados da API
+│   └── test_metrics.py         # 🆕 18 testes: counters, histograms, low-cardinality, /metrics
 ├── .github/
 │   └── workflows/
 │       └── ci.yml             # GitHub Actions CI: lint, testes unitários, smoke tests, smoke API
@@ -188,6 +190,7 @@ uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 | `GET`  | `/health` | Health check completo (modelo carregado?) | ❌ |
 | `POST` | `/predict` | Classificar **1 laudo** | ❌ |
 | `POST` | `/predict/batch` | Classificar **vários laudos** em lote | ❌ |
+| `GET`  | `/metrics` | 🆕 **Métricas Prometheus** (exposition format 0.0.4) | ❌ |
 
 ---
 
@@ -360,12 +363,13 @@ python run_api.py
 pytest tests/ -v
 ```
 
-Atualmente são **74 testes cobrindo**:
+Atualmente são **92 testes cobrindo**:
 | Suite | Quantidade |
 |:------|:----------:|
 | Pipeline ML (data, preproc, features, model) | 46 testes |
 | API FastAPI (schemas, services, endpoints, erros) | 28 testes |
-| **Total** | **74 testes** |
+| 🆕 **Observabilidade Prometheus** (counters, histograms, low-cardinality) | 18 testes |
+| **Total** | **92 testes** |
 
 ---
 
@@ -563,6 +567,125 @@ benchmarks/
 └── results/                 # Resultados JSON salvos
     └── baseline_local_uvicorn_1w_c1.json   # Baseline oficial V1
 ```
+
+---
+
+## 📊 Observabilidade — Métricas Prometheus
+
+A API de inferência é **totalmente instrumentada** com a biblioteca oficial `prometheus_client`, expondo métricas de volume, latência, erros e de negócio via endpoint `GET /metrics` no formato Prometheus Exposition v0.0.4, compatível com qualquer Prometheus/Grafana.
+
+### Endpoint `GET /metrics`
+
+- **URL**: `http://localhost:8000/metrics`
+- **Content-Type**: `text/plain; version=1.0.0; charset=utf-8` (padrão Prometheus)
+- **Self-reference safe**: o próprio endpoint `/metrics` **não entra** nos contadores HTTP (evita loop: scrape → count → scrape → count ...)
+
+### Como coletar localmente (exemplo cURL)
+
+```bash
+# Verificar o scrape raw
+curl -s http://localhost:8000/metrics | head -n 40
+
+# Contar quantas séries HELP/TYPE diferentes existem
+curl -s http://localhost:8000/metrics | grep "^# " | wc -l
+```
+
+### `prometheus.yml` — Exemplo completo de scrape config
+
+```yaml
+global:
+  scrape_interval: 10s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: 'urgencia-api'
+    static_configs:
+      - targets: ['localhost:8000']
+    metrics_path: /metrics
+    honor_labels: true
+```
+
+### Tabela completa de métricas (10 ao todo)
+
+| Nome | Tipo | Labels | Descrição |
+|------|------|--------|-----------|
+| **`http_requests_total`** | Counter | `method`, `endpoint`, `status_code` | Total de requests HTTP por método, endpoint (template da rota) e código de status. |
+| **`http_request_duration_seconds`** | Histogram | `method`, `endpoint` | Latência full da request (inclui validação, HTTP overhead). Buckets: `0.001, 0.0025, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0` segundos. |
+| **`http_errors_total`** | Counter | `method`, `endpoint`, `status_code`, `status_family` | Erros HTTP segmentados por status exato **e** por família (`4xx` / `5xx`). |
+| **`inference_predictions_total`** | Counter | `endpoint_type`, `predicted_class`, `model_name` | Inferências bem sucedidas, com classe predita (`normal`/`atencao`/`urgente`) e modelo (`logistic_regression`, etc.). |
+| **`inference_latency_seconds`** | Histogram | `endpoint_type` | Latência **exclusiva do `pipeline.predict()`** (limpa, sem overhead HTTP). Buckets: `0.0001, 0.0005, 0.001, 0.0025, 0.005, 0.01, 0.025, 0.05, 0.1, 0.5, 1.0` segundos. |
+| **`inference_errors_total`** | Counter | `endpoint_type`, `error_type` | Falhas na inferência. Tipos comuns: `model_not_loaded`, `invalid_text`, `predict_exception`, `batch_too_large`. |
+| **`inference_items_processed_total`** | Counter | `endpoint_type` | Número de itens efetivamente processados (lotes = N items contam +N cada, não +1). |
+| **`model_loaded`** | Gauge | `model_name` | Estado atual do artefato: `1.0` = carregado, `0.0` = não carregado. Flipado no lifespan. |
+| **`model_metadata_info`** | Info | — | Dicionário de metadata do deploy atual: `model_type`, `accuracy`, `f1_macro`, `roc_auc_ovr`, `trained_at`, `dag_id`, `run_id`, etc. |
+
+### Arquitetura de observabilidade aplicada
+
+```
+┌──────────────────────────────────────────────────────────────────────┐
+│                      FastAPI (app.main)                             │
+│                                                                     │
+│  ┌─ Middleware HTTP (unico, skip /metrics) ──────────────────────┐ │
+│  │  time.perf_counter() -> finally observe_http_request(...)      │ │
+│  │      -> http_requests_total / http_errors / http_duration     │ │
+│  └────────────────────────────────────────────────────────────────┘ │
+│                                                                     │
+│  ┌─ lifespan ─────────────────────────────────────────────────────┐ │
+│  │ startup: load_model() => gauge=1 + info metadata preenche      │ │
+│  │ shutdown: unload_model() => gauge=0                            │ │
+│  └────────────────────────────────────────────────────────────────┘ │
+│                                                                     │
+│  ┌─ ModelService (app.services.model_service) ────────────────────┐ │
+│  │ predict_single:                                                │ │
+│  │   t0=perf_counter(); y_pred=pipeline.predict(); latency=...   │ │
+│  │   finally:                                                     │ │
+│  │     sucesso -> inference_predictions_total (x1) + items (x1)  │ │
+│  │     sucesso -> inference_latency_seconds.observe(latency)     │ │
+│  │     falha  -> inference_errors_total{error_type=?}            │ │
+│  └────────────────────────────────────────────────────────────────┘ │
+│                                                                     │
+│  GET /metrics -> Response(body=REGISTRY.generate_latest(),         │
+│                       media_type="text/plain; version=1.0.0")      │
+└──────────────────────────────────────────────────────────────────────┘
+           │
+           ▼
+ Prometheus Server (scrape 10s)  ►  Grafana Dashboard
+```
+
+### Labels de baixa cardinalidade (regras seguidas)
+
+| ❌ Proibido | ✅ Permitido |
+|:------|:------|
+| `request_id`, trace_id aleatórios | `endpoint`, `method`, `status_code` — valores de domínio fechado |
+| `text` do laudo, body de entrada | `predicted_class` (`normal`, `atencao`, `urgente` — só 3 valores) |
+| IP do cliente / User-Agent | `error_type` — 4–8 valores fixos (não dinâmico) |
+| Timestamps como label | `status_family` — apenas `4xx`, `5xx` |
+| `<uuid>` / path params dinâmicos | `model_name` — um nome por deploy |
+
+> Implementado via helper `_resolve_route_template(request)` que sempre usa `request.scope.route.path` (template da rota) ao invés de `request.url.path` bruto. Chamadas repetidas com a mesma combinação nunca criam novas séries.
+
+### PromQL útil para painéis (exemplos prontos)
+
+| Painel | Query PromQL |
+|:-------|:-------------|
+| **RPS / requisições por segundo** | `rate(http_requests_total[5m])` |
+| **Taxa de erro 5xx (%)** | `100 * sum(rate(http_errors_total{status_family="5xx"}[5m])) / sum(rate(http_requests_total[5m]))` |
+| **P95 latência HTTP por endpoint** | `histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket[5m])) by (le, endpoint))` |
+| **Throughput predições por classe** | `sum(rate(inference_predictions_total[5m])) by (predicted_class)` |
+| **Distribuição de classes (último 5m)** | `sum(increase(inference_predictions_total[5m])) by (predicted_class)` |
+| **P99 latência do modelo (sem HTTP)** | `histogram_quantile(0.99, sum(rate(inference_latency_seconds_bucket[5m])) by (le, endpoint_type))` |
+| **Itens processados por hora (inclui lotes)** | `sum(increase(inference_items_processed_total[1h])) by (endpoint_type)` |
+| **Erros de inferência por tipo** | `sum(increase(inference_errors_total[15m])) by (error_type)` |
+| **Modelo carregado? Sinalização** | `model_loaded == 1` (alerta quando = 0) |
+| **Saturação de 422 (payloads inválidos)** | `sum(rate(http_errors_total{status_code="422"}[5m]))` |
+
+### Validação rápida do formato
+
+O conteúdo de `/metrics` é 100% compatível com o parser oficial do Prometheus. No smoke test oficial da branch:
+- ✅ `92 testes` passando (`pytest tests/ -v`)
+- ✅ `119` linhas parseáveis, `0` linhas inválidas
+- ✅ `14` séries HELP/TYPE declaradas (todas as métricas + `_info`, `_count`, `_bucket`)
+- ✅ Content-Type: `text/plain; version=1.0.0; charset=utf-8`
 
 ---
 
