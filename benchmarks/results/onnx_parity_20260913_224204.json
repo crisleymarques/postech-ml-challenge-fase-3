@@ -1,0 +1,55 @@
+{
+  "generated_at_utc": "2026-09-14T01:42:01Z",
+  "inputs": {
+    "joblib_path": "C:\\FIAP\\Fase3\\postech-ml-challenge-fase-3\\models\\urgency_classifier.joblib",
+    "onnx_path": "C:\\FIAP\\Fase3\\postech-ml-challenge-fase-3\\models\\urgency_classifier.onnx",
+    "test_csv": "C:\\FIAP\\Fase3\\postech-ml-challenge-fase-3\\data\\processed\\medical_tc_test.csv",
+    "opset": 19,
+    "samples": -1
+  },
+  "sklearn_original_metadata": {
+    "model_name": "logistic_regression",
+    "n_train": 11550,
+    "accuracy": 0.6832,
+    "f1_macro": 0.6623,
+    "created_date": "2026-09-13T19:01:03.885766",
+    "pipeline_steps": [
+      "tfidf",
+      "classifier"
+    ]
+  },
+  "sklearn_load_time_ms": 40.05380003945902,
+  "export": {
+    "opset": 19,
+    "output_path": "C:\\FIAP\\Fase3\\postech-ml-challenge-fase-3\\models\\urgency_classifier.onnx",
+    "time_ms": 810.1
+  },
+  "artifact_sizes": {
+    "joblib_kb": 629.86,
+    "onnx_kb": 427.52,
+    "diff_pct_onnx_vs_joblib": -32.12
+  },
+  "onnx_load_time_ms": 32.71,
+  "parity": {
+    "n_samples": 2888,
+    "accuracy_match_sklearn_vs_onnx": 0.9958448753462604,
+    "mean_abs_diff_probability": 0.0032832216229680207,
+    "max_abs_diff_probability": 0.11685370120400629,
+    "accuracy_vs_ytrue_sklearn": 0.6831717451523546,
+    "accuracy_vs_ytrue_onnx": 0.6831717451523546,
+    "delta_accuracy_onnx_minus_sklearn": 0.0,
+    "f1_macro_vs_ytrue_sklearn": 0.662289823272903,
+    "f1_macro_vs_ytrue_onnx": 0.6602665048067841,
+    "delta_f1_macro_onnx_minus_sklearn": -0.0020233184661189174,
+    "total_predict_time_sklearn_ms": 311.9175000465475,
+    "total_predict_time_onnx_ms": 407.31829998549074,
+    "onnx_speedup_vs_sklearn_total": 0.7657831726628989,
+    "constraints": {
+      "min_accuracy_match_required": 0.99,
+      "max_mean_abs_diff_proba_required": 0.02,
+      "match_ok": true,
+      "proba_ok": true
+    }
+  },
+  "parity_ok": true
+}

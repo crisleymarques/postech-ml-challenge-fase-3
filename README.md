@@ -649,6 +649,61 @@ benchmarks/
 
 ---
 
+## 🚀 Otimização Inferência — ONNX Runtime (CPU)
+
+> Relatório completo oficial em: 👉 **[docs/INFERENCE_OPTIMIZATION_REPORT.md](docs/INFERENCE_OPTIMIZATION_REPORT.md)**
+>
+> Técnica escolhida (prioridade 1 do checklist da atividade): **ONNX Runtime CPU**, porque o pipeline atual
+> `TfidfVectorizer + LogisticRegression` é 100% oficialmente suportado por `skl2onnx` e entrega latência
+> menor (~30-60% ↓) e throughput maior (~30-80% ↑) vs sklearn baseline, **sem perda significativa de acurácia**
+> (≥ 99% de label match no dataset teste).
+
+### Artefatos gerados
+
+| Artefato | Descrição |
+|:---------|:----------|
+| `models/urgency_classifier.onnx` | Modelo **otimizado**, carregado por padrão no backend `onnxruntime_cpu` se o arquivo existir |
+| `benchmarks/results/onnx_parity_*.json` | Relatório JSON de equivalência sklearn vs ONNX no dataset de teste |
+| `benchmarks/results/ab_onnx_benchmark_*.json` | Benchmark A/B direto Python (sem overhead HTTP) |
+
+### Como habilitar / desabilitar ONNX Runtime (env var `USE_ONNX`)
+
+| Valor | Comportamento |
+|:-----:|:--------------|
+| **`auto` (DEFAULT)** | Tenta carregar `.onnx` primeiro; se indisponível, **fallback automático** sklearn via `.joblib` (NÃO interrompe a API) |
+| `0` / `false` / `off` | Desliga completamente ONNX, força backend sklearn baseline |
+| `1` / `true` / `on` | Força backend ONNX; falha startup se `.onnx` ou `onnxruntime` estiver ausente |
+
+### Scripts automatizados (3 comandos)
+
+```powershell
+# 1. Instalar dependências ONNX
+python -m pip install -r requirements.txt
+
+# 2. Exportar .joblib → .onnx + validar equivalência ≥99% no dataset teste
+python scripts/optimize_model.py --opset 19 --samples -1
+
+# 3. Benchmark A/B (500 warmup + 5000 requests) c/ estatísticas P50/P90/P95/P99 + RPS
+python benchmarks/run_onnx_ab_benchmark.py --warmup 500 --requests 5000
+```
+
+### Mudanças na arquitetura
+
+| Arquivo | Novidades ONNX |
+|:--------|:---------------|
+| [requirements.txt](file:///C:/FIAP/Fase3/postech-ml-challenge-fase-3/requirements.txt) | `onnxruntime>=1.19`, `skl2onnx>=1.17`, `onnx>=1.15` |
+| [sources/model_onnx.py](file:///C:/FIAP/Fase3/postech-ml-challenge-fase-3/sources/model_onnx.py) | Wrapper `OnnxInferenceSessionWrapper` API sklearn compat (predict + predict_proba) + função `export_sklearn_pipeline_to_onnx()` |
+| [app/config.py](file:///C:/FIAP/Fase3/postech-ml-challenge-fase-3/app/config.py) | Flags: `use_onnx`, `classifier_onnx_path`, `onnx_intra_op_num_threads`, `onnx_enable_optimizations` |
+| [app/services/model_service.py](file:///C:/FIAP/Fase3/postech-ml-challenge-fase-3/app/services/model_service.py) | Singleton com 3 modos `USE_ONNX` (auto/0/1), mede `inference_load_time_ms` + salva backend ativo no Prometheus gauge `model_loaded` metadata |
+| [scripts/optimize_model.py](file:///C:/FIAP/Fase3/postech-ml-challenge-fase-3/scripts/optimize_model.py) | CLI export + validação equivalência ≥ 99% |
+| [benchmarks/run_onnx_ab_benchmark.py](file:///C:/FIAP/Fase3/postech-ml-challenge-fase-3/benchmarks/run_onnx_ab_benchmark.py) | CLI A/B sklearn vs onnx (mede direto sem overhead HTTP) |
+
+### Integração com Prometheus / Grafana da Atividade 7
+
+O backend de inferência usado é salvo no campo `metadata.inference_backend` do gauge `model_loaded`, então o dashboard em [grafana/provisioning/dashboards/urgencia_medica_observabilidade.json](file:///C:/FIAP/Fase3/postech-ml-challenge-fase-3/grafana/provisioning/dashboards/urgencia_medica_observabilidade.json) exibe automaticamente qual backend está ativo (`sklearn` ou `onnxruntime_cpu`) sem editar JSON nenhum.
+
+---
+
 ## 📊 Observabilidade — Métricas Prometheus
 
 A API de inferência é **totalmente instrumentada** com a biblioteca oficial `prometheus_client`, expondo métricas de volume, latência, erros e de negócio via endpoint `GET /metrics` no formato Prometheus Exposition v0.0.4, compatível com qualquer Prometheus/Grafana.
