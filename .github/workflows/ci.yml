@@ -2,7 +2,7 @@ name: CI - Pipeline NLP de Urgência Médica
 
 on:
   push:
-    branches: [main, master, "develop", "feature/*", "autom/*"]
+    branches: [main, master, "develop", "feature/*"]
   pull_request:
     branches: [main, master, develop]
 
@@ -27,8 +27,8 @@ jobs:
 
       - name: Syntax Check (py_compile)
         run: |
-          uv run python -m py_compile sources/config.py sources/data_loader.py sources/preprocessing.py sources/model.py pipelines/feature_pipeline.py run_pipeline.py
-          echo "Sintaxe OK em todos os módulos"
+          uv run python -m py_compile sources/config.py sources/data_loader.py sources/preprocessing.py sources/model.py pipelines/feature_pipeline.py run_pipeline.py app/__init__.py app/config.py app/schemas.py app/exceptions.py app/main.py app/services/__init__.py app/services/model_service.py tests/*.py
+          echo "Sintaxe OK em todos os módulos (source + pipelines + app + tests)"
 
   test:
     name: Testes Unitários
@@ -115,3 +115,108 @@ jobs:
             docs/*.json
           if-no-files-found: ignore
           retention-days: 7
+  api-check:
+    name: Testes da API FastAPI (health + predict)
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - name: Checkout do código
+        uses: actions/checkout@v4
+
+      - name: Instalar uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - name: Setup Python 3.13
+        run: uv python install 3.13
+
+      - name: Instalar dependências
+        run: uv sync
+
+      - name: Criar diretórios necessários
+        run: |
+          mkdir -p data/processed models
+
+      - name: Verificar importação do app e criação
+        run: |
+          uv run python -c "
+          import sys
+          sys.path.insert(0, '.')
+          from app.main import create_app
+          app = create_app()
+          routes = sorted([r.path for r in app.routes])
+          assert '/health' in routes, 'Faltando rota /health'
+          assert '/predict' in routes, 'Faltando rota /predict'
+          assert '/predict/batch' in routes, 'Faltando rota /predict/batch'
+          print(f'OK: App criado. Rotas encontradas: {routes}')
+          "
+
+      - name: Rodar testes específicos da API
+        run: |
+          uv run python -m pytest tests/test_api.py -v --tb=short --color=yes -p no:cacheprovider
+
+      - name: Teste end-to-end com TestClient (integração)
+        run: |
+          uv run python -c "
+          import sys, tempfile, os
+          sys.path.insert(0, '.')
+          import pandas as pd
+          from sklearn.pipeline import Pipeline
+          from sklearn.feature_extraction.text import TfidfVectorizer
+          from sklearn.linear_model import LogisticRegression
+          import joblib
+          tmp = tempfile.mkdtemp()
+          t = [
+              'acute chest pain myocardial infarction st elevation urgent angioplasty',
+              'cardiac arrest cpr icu troponin coronary artery disease',
+              'stroke rehabilitation mri brain neurological',
+              'brain tumor biopsy surgical oncology metastasis urgent',
+              'colon cancer chemotherapy oncology treatment',
+              'chronic gastritis proton pump endoscopy ulcer diet',
+              'stomach ulcer hospital discharge oral antibiotics',
+              'esophageal varices sclerotherapy cirrhosis hepatic',
+              'diverticulitis antibiotics oral diet rest colon',
+              'migraine dizziness outpatient neurological',
+              'diabetes mellitus insulin glucose monitoring',
+              'hypertension medication blood pressure control',
+          ] * 10
+          y = [2, 2, 1, 2, 2, 0, 0, 0, 0, 1, 1, 1] * 10
+          pipe = Pipeline([('tfidf', TfidfVectorizer(max_features=500)), ('clf', LogisticRegression(C=5.0, max_iter=2000, class_weight='balanced', random_state=42))])
+          pipe.fit(t, y)
+          joblib.dump({'model': pipe, 'metadata': {'model_name': 'ci_dummy'}}, os.path.join(tmp, 'urgency_classifier.joblib'))
+
+          os.environ['MODELS_DIR'] = tmp
+          os.environ['REQUEST_TEXT_MIN_LENGTH'] = '5'
+
+          from fastapi.testclient import TestClient
+          from app.main import create_app
+          with TestClient(create_app()) as client:
+              r = client.get('/health')
+              assert r.status_code == 200, f'health: {r.status_code} {r.text}'
+              assert r.json()['status'] == 'healthy', f'health status: {r.json()}'
+              print('OK: /health healthy')
+    
+              r = client.post('/predict', json={'text': 'acute myocardial infarction chest pain ST elevation urgent angioplasty', 'return_probabilities': True})
+              assert r.status_code == 200, f'predict: {r.status_code} {r.text}'
+              body = r.json()
+              assert 'predicted_label' in body and 'predicted_name' in body and 'probabilities' in body
+              print(f'OK: /predict -> {body[\"predicted_name\"]} probs={body[\"probabilities\"]}')
+    
+              r = client.post('/predict', json={})
+              assert r.status_code == 422, f'validation should be 422 got {r.status_code}'
+              body = r.json()
+              assert 'traceback' not in str(body).lower(), 'stack trace exposto!'
+              assert body.get('error') == 'VALIDATION_ERROR', f'erro errado: {body}'
+              print(f'OK: 422 retornou erro formatado corretamente (sem stack)')
+    
+              r = client.post('/predict/batch', json={'items': [
+                  {'text': 'acute myocardial infarction chest pain'},
+                  {'text': 'chronic gastritis proton pump inhibitor dietary'},
+              ]})
+              assert r.status_code == 200
+              assert r.json()['total_items'] == 2
+              print(f'OK: /predict/batch total={r.json()[\"total_items\"]}')
+    
+              print('API E2E OK')
+          "
