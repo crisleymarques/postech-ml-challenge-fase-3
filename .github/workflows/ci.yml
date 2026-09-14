@@ -2,7 +2,7 @@ name: CI - Pipeline NLP de Urgência Médica
 
 on:
   push:
-    branches: ['**']
+    branches: [main, master, "develop", "feature/*", "autom/*", "classificacao_laudos_fastapi"]
   pull_request:
     branches: [main, master, develop]
 
@@ -191,33 +191,32 @@ jobs:
 
           from fastapi.testclient import TestClient
           from app.main import create_app
-          client = TestClient(create_app())
-
-          r = client.get('/health')
-          assert r.status_code == 200, f'health: {r.status_code} {r.text}'
-          assert r.json()['status'] == 'healthy', f'health status: {r.json()}'
-          print('OK: /health healthy')
-
-          r = client.post('/predict', json={'text': 'acute myocardial infarction chest pain ST elevation urgent angioplasty', 'return_probabilities': True})
-          assert r.status_code == 200, f'predict: {r.status_code} {r.text}'
-          body = r.json()
-          assert 'predicted_label' in body and 'predicted_name' in body and 'probabilities' in body
-          print(f'OK: /predict -> {body[\"predicted_name\"]} probs={body[\"probabilities\"]}')
-
-          r = client.post('/predict', json={})
-          assert r.status_code == 422, f'validation should be 422 got {r.status_code}'
-          body = r.json()
-          assert 'traceback' not in str(body).lower(), 'stack trace exposto!'
-          assert body.get('error') == 'VALIDATION_ERROR', f'erro errado: {body}'
-          print(f'OK: 422 retornou erro formatado corretamente (sem stack)')
-
-          r = client.post('/predict/batch', json={'items': [
-              {'text': 'acute myocardial infarction chest pain'},
-              {'text': 'chronic gastritis proton pump inhibitor dietary'},
-          ]})
-          assert r.status_code == 200
-          assert r.json()['total_items'] == 2
-          print(f'OK: /predict/batch total={r.json()[\"total_items\"]}')
-
-          print('API E2E OK')
+          with TestClient(create_app()) as client:
+              r = client.get('/health')
+              assert r.status_code == 200, f'health: {r.status_code} {r.text}'
+              assert r.json()['status'] == 'healthy', f'health status: {r.json()}'
+              print('OK: /health healthy')
+    
+              r = client.post('/predict', json={'text': 'acute myocardial infarction chest pain ST elevation urgent angioplasty', 'return_probabilities': True})
+              assert r.status_code == 200, f'predict: {r.status_code} {r.text}'
+              body = r.json()
+              assert 'predicted_label' in body and 'predicted_name' in body and 'probabilities' in body
+              print(f'OK: /predict -> {body[\"predicted_name\"]} probs={body[\"probabilities\"]}')
+    
+              r = client.post('/predict', json={})
+              assert r.status_code == 422, f'validation should be 422 got {r.status_code}'
+              body = r.json()
+              assert 'traceback' not in str(body).lower(), 'stack trace exposto!'
+              assert body.get('error') == 'VALIDATION_ERROR', f'erro errado: {body}'
+              print(f'OK: 422 retornou erro formatado corretamente (sem stack)')
+    
+              r = client.post('/predict/batch', json={'items': [
+                  {'text': 'acute myocardial infarction chest pain'},
+                  {'text': 'chronic gastritis proton pump inhibitor dietary'},
+              ]})
+              assert r.status_code == 200
+              assert r.json()['total_items'] == 2
+              print(f'OK: /predict/batch total={r.json()[\"total_items\"]}')
+    
+              print('API E2E OK')
           "
