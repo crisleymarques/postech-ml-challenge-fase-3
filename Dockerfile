@@ -26,14 +26,17 @@ COPY run_api.py   ./
 COPY run_pipeline.py ./
 
 COPY models/.gitkeep ./models/.gitkeep
-COPY data/.gitkeep ./data/.gitkeep
-COPY data/raw/ ./data/raw/
 
 USER root
+RUN mkdir -p ${APP_HOME}/data/raw ${APP_HOME}/data/processed ${APP_HOME}/models
+
 RUN useradd -m --uid 1000 appuser && \
-    mkdir -p ${APP_HOME}/data/processed ${APP_HOME}/models && \
     chown -R appuser:appuser ${APP_HOME}
 
+RUN echo "[INFO] Pastas data/raw, data/processed, models criadas vazias no build." \
+    && echo "       Os arquivos reais (modelo .joblib e datasets) serao MONTADOS via volumes no docker-compose.ymll:ro" \
+    && echo "       Verifique: ./models:/app/models:ro e ./data:/app/data:ro" \
+    && chown -R appuser:appuser ${APP_HOME}/data ${APP_HOME}/models || true
 USER appuser
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \

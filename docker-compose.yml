@@ -1,3 +1,7 @@
+x-common-networks: &common-networks
+  networks:
+    - observabilidade-net
+
 services:
   api:
     build:
@@ -23,10 +27,10 @@ services:
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
-      interval: 30s
+      interval: 10s
       timeout: 5s
-      retries: 3
-      start_period: 20s
+      retries: 10
+      start_period: 30s
     cpuset: ${API_CPUSET:-}
     mem_limit: ${API_MEM_LIMIT:-2g}
     cpus: ${API_CPUS:-1.0}
@@ -35,6 +39,7 @@ services:
         limits:
           cpus: ${API_CPUS:-1.0}
           memory: ${API_MEM_LIMIT:-2g}
+    <<: *common-networks
 
   api-dev:
     build:
@@ -42,6 +47,8 @@ services:
       dockerfile: Dockerfile.dev
     image: postech-ml-challenge/api-dev:latest
     container_name: urgencia-medica-api-dev
+    profiles:
+      - dev
     ports:
       - "8001:8000"
     environment:
@@ -52,10 +59,13 @@ services:
       - ./data:/app/data:ro
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
     restart: unless-stopped
+    <<: *common-networks
 
   benchmark:
     image: python:3.11-slim-bookworm
     container_name: urgencia-medica-benchmark
+    profiles:
+      - benchmark
     depends_on:
       api:
         condition: service_healthy
@@ -75,4 +85,111 @@ services:
           --requests $${BENCHMARK_TOTAL_REQUESTS}
           --output /benchmark/results/baseline_docker.json
       "
-    network_mode: "service:api"
+    <<: *common-networks
+
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    container_name: urgencia-medica-prometheus
+    profiles:
+      - observability
+    ports:
+      - "9090:9090"
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=7d"
+      - "--web.console.libraries=/usr/share/prometheus/console_libraries"
+      - "--web.console.templates=/usr/share/prometheus/consoles"
+      - "--web.enable-lifecycle"
+      - "--web.enable-admin-api"
+      - "--log.level=info"
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--spider", "http://localhost:9090/-/healthy"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    <<: *common-networks
+
+  grafana:
+    image: grafana/grafana-oss:11.2.0
+    container_name: urgencia-medica-grafana
+    profiles:
+      - observability
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-admin}
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_AUTH_ANONYMOUS_ENABLED=false
+      - GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH=/etc/grafana/provisioning/dashboards/urgencia_medica_observabilidade.json
+      - GF_DATE_FORMATS_DEFAULT_TIMEZONE=browser
+      - GF_PANELS_DISABLE_SANITIZE_HTML=true
+      - GF_LOG_MODE=console
+      - GF_LOG_LEVEL=info
+      - GF_PLUGINS_ADMIN_ENABLED=false
+    volumes:
+      - ./grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro
+      - ./grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    restart: unless-stopped
+    depends_on:
+      prometheus:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget --quiet --tries=1 --spider http://localhost:3000/api/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 12
+      start_period: 60s
+    <<: *common-networks
+
+  traffic-generator:
+    image: python:3.11-slim-bookworm
+    container_name: urgencia-medica-traffic-generator
+    profiles:
+      - observability
+      - traffic
+    depends_on:
+      api:
+        condition: service_healthy
+    working_dir: /scripts
+    volumes:
+      - ./scripts:/scripts:ro
+      - ./requirements.txt:/tmp/requirements.txt:ro
+    environment:
+      - TRAFFIC_API_URL=http://api:8000
+      - TRAFFIC_DURATION_SECONDS=${TRAFFIC_DURATION_SECONDS:-600}
+      - TRAFFIC_RPS=${TRAFFIC_RPS:-1}
+      - TRAFFIC_BATCH_RATIO=${TRAFFIC_BATCH_RATIO:-0.2}
+      - TRAFFIC_ERROR_RATIO=${TRAFFIC_ERROR_RATIO:-0.1}
+    command: >
+      sh -c "
+        pip install --no-cache-dir httpx &&
+        python /scripts/generate_traffic.py
+          --url $${TRAFFIC_API_URL}
+          --duration $${TRAFFIC_DURATION_SECONDS}
+          --rps $${TRAFFIC_RPS}
+          --batch-ratio $${TRAFFIC_BATCH_RATIO}
+          --error-ratio $${TRAFFIC_ERROR_RATIO}
+      "
+    <<: *common-networks
+
+volumes:
+  prometheus-data:
+    name: urgencia-medica-prometheus-data
+  grafana-data:
+    name: urgencia-medica-grafana-data
+
+networks:
+  observabilidade-net:
+    driver: bridge
+    name: urgencia-medica-observabilidade
