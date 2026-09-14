@@ -1,13 +1,9 @@
 from __future__ import annotations
 
-import sys
 import logging
-from pathlib import Path
 from datetime import datetime, timezone
 from contextlib import asynccontextmanager
 from typing import Dict, Any
-
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from fastapi import FastAPI, Depends, Request, status
 from fastapi.responses import JSONResponse
