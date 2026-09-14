@@ -24,6 +24,21 @@ class Settings(BaseSettings):
     models_dir: Optional[str] = None
     vectorizer_name: str = "tfidf_vectorizer"
 
+    # =============================================================================
+    # OTIMIZACAO DE INFERENCIA (ONNX Runtime CPU)
+    # USE_ONNX:
+    #   "1"/True  -> Força carregar modelo .onnx (falha se arquivo/nao existe)
+    #   "0"/False -> Desliga completamente, usa sklearn joblib (baseline)
+    #   "auto"    -> DEFAULT. Tenta carregar ONNX primeiro; se indisponivel/ausente
+    #                cai p/ sklearn joblib SEM interromper a API.
+    # =============================================================================
+    use_onnx: str = "auto"
+
+    onnx_intra_op_num_threads: int = 1
+    onnx_inter_op_num_threads: int = 0
+    onnx_execution_mode: str = "sequential"
+    onnx_enable_optimizations: bool = True
+
     request_text_min_length: int = 10
     request_text_max_length: int = 50000
 
@@ -42,6 +57,10 @@ class Settings(BaseSettings):
     @property
     def classifier_path(self) -> Path:
         return self.models_path / f"{self.model_name}.joblib"
+
+    @property
+    def classifier_onnx_path(self) -> Path:
+        return self.models_path / f"{self.model_name}.onnx"
 
 
 settings = Settings()

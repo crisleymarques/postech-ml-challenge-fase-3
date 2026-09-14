@@ -18,6 +18,16 @@ pyarrow>=10.0.0
 prometheus_client>=0.20.0
 
 # =============================================================================
+# OTIMIZACAO DE INFERENCIA (ONNX Runtime CPU + Conversao sklearn -> ONNX)
+# VERSOES MINIMAS COMPATIVEIS COM PYTHON 3.13 WIN-AMD64 (tem wheels pre-compilados, evita cmake build)
+# ONNX Runtime CPU (engine de inferencia otimizado, cross-platform sem dependencia GPU)
+onnxruntime>=1.20.0
+# skl2onnx: exporta pipelines sklearn completos (TfidfVectorizer + LogisticRegression etc.) p/ ONNX
+skl2onnx>=1.17.0
+# onnx (utilitarios de validacao da estrutura ONNX apos export, versao >=1.16=wheel py313)
+onnx>=1.16.0,<1.19.0
+
+# =============================================================================
 # OPCIONAL: Apache Airflow (recomendado usar via docker-compose-airflow.yml)
 # Descomente abaixo apenas se deseja instalar localmente (pode gerar conflitos
 # de dependencias; prefira a imagem oficial apache/airflow via compose).

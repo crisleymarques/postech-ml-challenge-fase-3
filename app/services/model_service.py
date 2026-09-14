@@ -23,6 +23,17 @@ from app.metrics import (
 logger = logging.getLogger(__name__)
 
 
+def _parse_use_onnx_flag(val: str) -> str:
+    if val is None:
+        return "auto"
+    s = str(val).strip().lower()
+    if s in {"1", "true", "yes", "on"}:
+        return "1"
+    if s in {"0", "false", "no", "off"}:
+        return "0"
+    return s
+
+
 class ModelServiceError(Exception):
     pass
 
@@ -56,45 +67,108 @@ class ModelService:
         return self._loaded_at
 
     def model_file_exists(self) -> bool:
-        return self.config.classifier_path.exists()
+        return self.config.classifier_path.exists() or self.config.classifier_onnx_path.exists()
+
+    def _load_sklearn(self) -> None:
+        path = self.config.classifier_path
+        if not path.exists():
+            raise ModelServiceError(
+                f"Arquivo joblib sklearn nao encontrado em: {path}. "
+                "Execute o pipeline de treinamento primeiro (run_pipeline.py)."
+            )
+        artifact = joblib.load(path)
+        if isinstance(artifact, dict) and "model" in artifact:
+            self._pipeline = artifact.get("model")
+            self._metadata = dict(artifact.get("metadata", {}) or {})
+        else:
+            self._pipeline = artifact
+            self._metadata = {}
+        self._metadata["inference_backend"] = "sklearn"
+        self._metadata["inference_backend_path"] = str(path)
+
+    def _load_onnx(self) -> None:
+        path = self.config.classifier_onnx_path
+        if not path.exists():
+            raise ModelServiceError(f"Arquivo ONNX nao encontrado em: {path}")
+        from sources.model_onnx import OnnxInferenceSessionWrapper
+
+        wrapper = OnnxInferenceSessionWrapper(
+            onnx_path=path,
+            intra_op_num_threads=int(getattr(self.config, "onnx_intra_op_num_threads", 1) or 1),
+            inter_op_num_threads=int(getattr(self.config, "onnx_inter_op_num_threads", 0) or 0),
+            execution_mode=str(getattr(self.config, "onnx_execution_mode", "sequential") or "sequential"),
+            enable_optimizations=bool(getattr(self.config, "onnx_enable_optimizations", True)),
+        )
+        self._pipeline = wrapper
+        self._metadata["inference_backend"] = "onnxruntime_cpu"
+        self._metadata["inference_backend_path"] = str(path)
 
     def load_model(self, force: bool = False) -> None:
         if self.is_loaded and not force:
             return
-        path = self.config.classifier_path
-        if not path.exists():
+
+        use_onnx_flag = _parse_use_onnx_flag(getattr(self.config, "use_onnx", "auto"))
+        t0 = time.perf_counter()
+        loaded_backend: Optional[str] = None
+        last_error: Optional[BaseException] = None
+
+        mn = str(self.config.model_name)
+
+        try:
+            onnx_candidate = self.config.classifier_onnx_path
+            sklearn_candidate = self.config.classifier_path
+
+            if use_onnx_flag == "0":
+                logger.info("[MODEL] USE_ONNX=0: carregando apenas sklearn joblib.")
+                self._load_sklearn()
+                loaded_backend = "sklearn"
+            elif use_onnx_flag == "1":
+                logger.info("[MODEL] USE_ONNX=1: carregando ONNX (forcado).")
+                self._load_onnx()
+                loaded_backend = "onnxruntime_cpu"
+            else:
+                # AUTO: tenta ONNX primeiro, fallback sklearn
+                if onnx_candidate.exists():
+                    try:
+                        logger.info("[MODEL] USE_ONNX=auto: tentando ONNX primeiro (%s)", onnx_candidate)
+                        self._load_onnx()
+                        loaded_backend = "onnxruntime_cpu"
+                    except Exception as exc:
+                        last_error = exc
+                        logger.warning(
+                            "[MODEL] Falhou carregamento ONNX (fallback p/ sklearn): %s: %s",
+                            exc.__class__.__name__,
+                            exc,
+                        )
+                        self._pipeline = None
+                if loaded_backend is None and sklearn_candidate.exists():
+                    self._load_sklearn()
+                    loaded_backend = "sklearn"
+                if loaded_backend is None:
+                    raise ModelServiceError(
+                        "Nenhum modelo carregado. Verifique arquivos: "
+                        f"joblib={sklearn_candidate}, onnx={onnx_candidate}. "
+                        f"Ultimo erro: {last_error}"
+                    )
+        except Exception as exc:
             try:
-                mn = str(self._metadata.get("model_name", self.config.model_name))
                 update_model_loaded_state(False, mn)
             except Exception:
                 pass
             raise ModelServiceError(
-                f"Arquivo de modelo nao encontrado em: {path}. "
-                "Execute o pipeline de treinamento primeiro (run_pipeline.py)."
-            )
-        try:
-            artifact = joblib.load(path)
-        except Exception as exc:
-            try:
-                mn = str(self._metadata.get("model_name", self.config.model_name))
-                update_model_loaded_state(False, mn)
-            except Exception:
-                pass
-            raise ModelServiceError(f"Falha ao carregar o modelo: {exc.__class__.__name__}") from exc
+                f"Falha ao carregar modelo: {exc.__class__.__name__}: {exc}"
+            ) from exc
 
-        if isinstance(artifact, dict) and "model" in artifact:
-            self._pipeline = artifact.get("model")
-            self._metadata = artifact.get("metadata", {}) or {}
-        else:
-            self._pipeline = artifact
-            self._metadata = {}
-
+        if self._metadata.get("model_name") in (None, ""):
+            self._metadata["model_name"] = mn
         self._loaded_at = datetime.now(timezone.utc)
-        mn = str(self._metadata.get("model_name", self.config.model_name))
+        load_ms = max(0.0, (time.perf_counter() - t0) * 1000.0)
+        self._metadata["inference_load_time_ms"] = float(round(load_ms, 2))
         update_model_loaded_state(True, mn, self._metadata)
         logger.info(
-            "Modelo carregado com sucesso de %s (loaded_at=%s, classes=%s)",
-            path,
+            "[MODEL] Carregado backend=%s (load_time_ms=%.2f, loaded_at=%s, classes=%s)",
+            self._metadata.get("inference_backend"),
+            load_ms,
             self._loaded_at.isoformat(),
             list(URGENCY_LABEL_TO_NAME.values()),
         )
