@@ -315,9 +315,13 @@ print(resp.json())
 
 ### 1. Instalar dependências
 
+O projeto usa [uv](https://docs.astral.sh/uv/) como gerenciador de dependências:
+
 ```bash
-pip install -r requirements.txt
+uv sync
 ```
+
+> Se não tiver `uv` instalado: `curl -LsSf https://astral.sh/uv/install.sh | sh`
 
 ### 2. Executar o EDA
 
@@ -345,7 +349,7 @@ python run_api.py
 ### 5. Rodar TODOS os testes unitários e integrados
 
 ```bash
-pytest tests/ -v
+uv run pytest tests/ -v
 ```
 
 Atualmente são **74 testes cobrindo**:
