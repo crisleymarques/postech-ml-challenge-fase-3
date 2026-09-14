@@ -2,7 +2,7 @@ name: CI - Pipeline NLP de Urgência Médica
 
 on:
   push:
-    branches: [main, master, "develop", "feature/*", "autom/*"]
+    branches: ['**']
   pull_request:
     branches: [main, master, develop]
 
