@@ -8,53 +8,59 @@ on:
 
 env:
   PYTHONUNBUFFERED: "1"
+  UV_CACHE_DIR: /tmp/.uv-cache
 
 jobs:
-  test:
-    name: Testes Unitários (Python ${{ matrix.python-version }} / ${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest]
-        python-version: ["3.10", "3.11", "3.12"]
-        include:
-          - os: windows-latest
-            python-version: "3.11"
+  lint-check:
+    name: Verificação de Sintaxe e Estilo
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
 
+      - name: Instalar uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - name: Setup Python 3.13
+        run: uv python install 3.13
+
+      - name: Syntax Check (py_compile)
+        run: |
+          uv run python -m py_compile sources/config.py sources/data_loader.py sources/preprocessing.py sources/model.py pipelines/feature_pipeline.py run_pipeline.py
+          echo "Sintaxe OK em todos os módulos"
+
+  test:
+    name: Testes Unitários
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout do código
         uses: actions/checkout@v4
 
-      - name: Setup Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v5
+      - name: Instalar uv
+        uses: astral-sh/setup-uv@v6
         with:
-          python-version: ${{ matrix.python-version }}
-          cache: "pip"
+          enable-cache: true
+
+      - name: Setup Python 3.13
+        run: uv python install 3.13
 
       - name: Instalar dependências
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install -r requirements.txt pytest
-          python -m pip install nltk
+        run: uv sync
 
       - name: Criar diretórios necessários
-        run: |
-          mkdir -p data/processed models
+        run: mkdir -p data/processed models
 
       - name: Rodar testes unitários com pytest
         run: |
-          python -m pytest tests/ -v --tb=short --color=yes -p no:cacheprovider
-        env:
-          PYTHONDONTWRITEBYTECODE: "1"
+          uv run pytest tests/ -v --tb=short --color=yes --junitxml=test-results/results.xml
 
-      - name: Upload artefato de relatório de testes (se falhar)
+      - name: Upload relatório de testes (se falhar)
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: pytest-results-${{ matrix.os }}-py${{ matrix.python-version }}
-          path: |
-            .pytest_cache/
+          name: pytest-results
+          path: test-results/
           retention-days: 3
 
   pipeline-check:
@@ -65,20 +71,20 @@ jobs:
       - name: Checkout do código
         uses: actions/checkout@v4
 
-      - name: Setup Python 3.11
-        uses: actions/setup-python@v5
+      - name: Instalar uv
+        uses: astral-sh/setup-uv@v6
         with:
-          python-version: "3.11"
-          cache: "pip"
+          enable-cache: true
+
+      - name: Setup Python 3.13
+        run: uv python install 3.13
 
       - name: Instalar dependências
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install -r requirements.txt
+        run: uv sync
 
       - name: Validar carregamento e módulos básicos
         run: |
-          python -c "
+          uv run python -c "
           import sys
           sys.path.insert(0, '.')
           from sources.config import setup_dirs, TRAIN_FILE, TEST_FILE, LABELS_FILE
@@ -109,16 +115,3 @@ jobs:
             docs/*.json
           if-no-files-found: ignore
           retention-days: 7
-
-  lint-check:
-    name: Verificação de Sintaxe e Estilo
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-      - name: Syntax Check (py_compile)
-        run: |
-          python -m py_compile sources/config.py sources/data_loader.py sources/preprocessing.py sources/model.py pipelines/feature_pipeline.py run_pipeline.py tests/*.py
-          echo "Syntaxe OK em todos os módulos"

@@ -38,7 +38,8 @@ postech-ml-challenge-fase-3/
 │   ├── test_feature_pipeline.py
 │   └── test_model.py
 ├── run_pipeline.py               # Script orquestrador - executa todo o pipeline
-├── requirements.txt              # Dependências do projeto
+├── pyproject.toml                # Dependências e metadados do projeto (uv)
+├── uv.lock                       # Lockfile de dependências (uv)
 └── README.md
 ```
 
@@ -101,9 +102,13 @@ Justificativas completas em [docs/DATASET.md](docs/DATASET.md).
 
 ### 1. Instalar dependências
 
+O projeto usa [uv](https://docs.astral.sh/uv/) como gerenciador de dependências:
+
 ```bash
-pip install -r requirements.txt
+uv sync
 ```
+
+> Se não tiver `uv` instalado: `curl -LsSf https://astral.sh/uv/install.sh | sh`
 
 ### 2. Executar o EDA
 
@@ -124,7 +129,7 @@ Flags opcionais:
 ### 4. Rodar os testes unitários
 
 ```bash
-pytest tests/ -v
+uv run pytest tests/ -v
 ```
 
 ---
