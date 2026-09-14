@@ -154,66 +154,13 @@ Justificativas completas em [docs/DATASET.md](docs/DATASET.md).
 
 ## 🏛️ Decisão Arquitetural — Estratégia de Deploy em Nuvem
 
+> **💡 Nota:** Veja o documento detalhado em [docs/ADR_PRODUCTION_STRATEGY.md](docs/ADR_PRODUCTION_STRATEGY.md) para a arquitetura completa abordando escalabilidade, observabilidade, retreinamento e trade-offs.
+
 ### Por que a arquitetura importa neste projeto?
 
 O sistema classifica laudos médicos em três níveis de urgência (**Normal**, **Atenção**, **Urgente**) para auxiliar a triagem em ambiente hospitalar. A escolha da estratégia de inferência tem impacto direto na segurança do paciente: um paciente classificado como "Urgente" que aguarda um processamento em lote pode ter seu atendimento atrasado com consequências graves.
 
----
-
-### Batch vs. Real-time
-
-| Critério | Batch (Processamento em Lote) | Real-time (Inferência Online) ✅ |
-|:---------|:------------------------------|:---------------------------------|
-| **Latência** | Alta — processamento periódico (minutos/horas) | Baixíssima — resposta imediata (~3–5 ms) |
-| **Adequação ao domínio** | ❌ Inaceitável para triagem de urgência | ✅ Ideal: decisão clínica não pode esperar |
-| **Fluxo de dados** | Acumula laudos e processa em bloco | Processa cada laudo assim que chega |
-| **Custo por requisição** | Menor (amortizado no lote) | Ligeiramente maior, mas desprezível para o volume hospitalar |
-| **Complexidade operacional** | Requer orquestração de jobs (Airflow, etc.) | Simples: container sempre ativo via load balancer |
-| **Disponibilidade** | Depende do agendamento do job | 24/7, sem janelas de espera |
-| **Modelo utilizado** | Qualquer — treinamento offline funciona bem | TF-IDF + Regressão Logística → P99 < 5 ms ✅ |
-
-Sendo assim, a estratégia **Real-time (Online Inference)** é a única aceitável para triagem hospitalar. Atrasos oriundos de processamento em batch podem representar risco de vida para pacientes em estado urgente. A latência medida de **P99 ≈ 4,97 ms** comprova que o modelo escolhido é leve suficiente para suportar inferência síncrona em tempo real, mesmo sob carga.
-
----
-
-### Recomendação de Plataforma Cloud
-
-Como a API já está empacotada em um container Docker (com `Dockerfile` de produção seguindo boas práticas: Gunicorn + UvicornWorker, usuário não-root), a escolha natural são **serviços serverless de containers**, que eliminam a necessidade de gerenciar infraestrutura de servidores (sem VMs, sem clusters Kubernetes gerenciados manualmente) e escalam automaticamente conforme a demanda.
-
-| Plataforma | Serviço Recomendado | Destaque |
-|:-----------|:--------------------|:---------|
-| **AWS** | **ECS Fargate** | Integração nativa com ECR (registro de imagens), ALB (balanceamento), CloudWatch (observabilidade) e IAM (segurança). Ideal para quem já usa o ecossistema AWS. |
-| **GCP** | **Cloud Run** | Serviço mais simples de configurar para containers stateless. Escala até zero quando ocioso (custo zero em idle). Excelente para protótipos e MVPs hospitalares. |
-| **Azure** | **Azure Container Apps** | Integrado ao ecossistema Microsoft/HIPAA-compliance. Boa escolha para hospitais que já usam Azure Active Directory. |
-
-#### Arquitetura de Referência (AWS ECS Fargate)
-
-```
-[Sistema Hospitalar / Frontend Web]
-          │
-          ▼ HTTPS (REST)
-[Application Load Balancer — ALB]
-          │
-          ▼
-[ECS Fargate — Task Definition]
-  ┌───────────────────────────┐
-  │  Container: urgencia-api  │
-  │  Imagem: ECR repository   │
-  │  Gunicorn + Uvicorn       │
-  │  Port 8000                │
-  └───────────────────────────┘
-          │
-          ▼
-[S3 / EFS — modelos .joblib]   [CloudWatch — logs e métricas]
-```
-
-**Justificativas da escolha arquitetural:**
-
-1. **Stateless por design**: A API não mantém estado de sessão — cada requisição é independente. Isso torna o escalonamento horizontal trivial (ECS Fargate adiciona novas tasks automaticamente).
-2. **Modelo leve (< 50 MB)**: TF-IDF + Regressão Logística cabe facilmente em memória do container sem necessidade de GPU, mantendo custo de instância baixo.
-3. **Auto Scaling**: Configurar `ECS Service Auto Scaling` com métricas de CPU/RPS garante que picos de demanda (chegada de múltiplos pacientes) sejam absorvidos sem degradação.
-4. **Health check nativo**: O endpoint `/health` da API é diretamente compatível com os health checks do ALB/ECS, permitindo substituição automática de tasks não saudáveis.
-5. **Segurança**: O container roda com usuário não-root, e o ALB pode ser configurado com certificado TLS (HTTPS), atendendo aos requisitos de segurança para dados médicos (LGPD / HIPAA).
+Sendo assim, a estratégia **Real-time (Online Inference)** é a única aceitável para triagem hospitalar. A latência medida de **P99 ≈ 4,97 ms** comprova que o modelo escolhido é leve o suficiente para suportar inferência síncrona em tempo real, mesmo sob carga.
 
 
 ## 🚀 API de Inferência (FastAPI)
