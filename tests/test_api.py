@@ -1,9 +1,5 @@
-import sys
 import json
-from pathlib import Path
 from datetime import datetime
-
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import pytest
 

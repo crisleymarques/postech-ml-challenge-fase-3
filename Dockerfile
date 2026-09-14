@@ -34,8 +34,6 @@ RUN useradd -m --uid 1000 appuser && \
     mkdir -p ${APP_HOME}/data/processed ${APP_HOME}/models && \
     chown -R appuser:appuser ${APP_HOME}
 
-COPY models/urgency_classifier.joblib* ./models/ 2>/dev/null || true
-
 USER appuser
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
