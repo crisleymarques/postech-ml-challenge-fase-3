@@ -1,0 +1,117 @@
+name: CI - Pipeline NLP de Urgência Médica
+
+on:
+  push:
+    branches: [main, master, "develop", "feature/*", "autom/*"]
+  pull_request:
+    branches: [main, master, develop]
+
+env:
+  PYTHONUNBUFFERED: "1"
+  UV_CACHE_DIR: /tmp/.uv-cache
+
+jobs:
+  lint-check:
+    name: Verificação de Sintaxe e Estilo
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Instalar uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - name: Setup Python 3.13
+        run: uv python install 3.13
+
+      - name: Syntax Check (py_compile)
+        run: |
+          uv run python -m py_compile sources/config.py sources/data_loader.py sources/preprocessing.py sources/model.py pipelines/feature_pipeline.py run_pipeline.py
+          echo "Sintaxe OK em todos os módulos"
+
+  test:
+    name: Testes Unitários
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout do código
+        uses: actions/checkout@v4
+
+      - name: Instalar uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - name: Setup Python 3.13
+        run: uv python install 3.13
+
+      - name: Instalar dependências
+        run: uv sync
+
+      - name: Criar diretórios necessários
+        run: mkdir -p data/processed models
+
+      - name: Rodar testes unitários com pytest
+        run: |
+          uv run pytest tests/ -v --tb=short --color=yes --junitxml=test-results/results.xml
+
+      - name: Upload relatório de testes (se falhar)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pytest-results
+          path: test-results/
+          retention-days: 3
+
+  pipeline-check:
+    name: Execução do Pipeline Completo (Fumaça)
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - name: Checkout do código
+        uses: actions/checkout@v4
+
+      - name: Instalar uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - name: Setup Python 3.13
+        run: uv python install 3.13
+
+      - name: Instalar dependências
+        run: uv sync
+
+      - name: Validar carregamento e módulos básicos
+        run: |
+          uv run python -c "
+          import sys
+          sys.path.insert(0, '.')
+          from sources.config import setup_dirs, TRAIN_FILE, TEST_FILE, LABELS_FILE
+          setup_dirs()
+          assert TRAIN_FILE.exists(), f'Treino nao encontrado: {TRAIN_FILE}'
+          assert TEST_FILE.exists(), f'Teste nao encontrado: {TEST_FILE}'
+          assert LABELS_FILE.exists(), f'Labels nao encontrado: {LABELS_FILE}'
+          from sources.data_loader import load_raw_data, map_condition_to_urgency
+          from sources.preprocessing import clean_text
+          t, te = load_raw_data()
+          assert t.shape[0] + te.shape[0] >= 2000, 'Poucas amostras'
+          print(f'OK: {t.shape[0] + te.shape[0]} amostras carregadas')
+          from pipelines.feature_pipeline import create_tfidf_vectorizer
+          from sources.model import create_classifier
+          _ = create_tfidf_vectorizer(max_features=100)
+          _ = create_classifier('logistic_regression')
+          _ = clean_text('Test <p>https://x.com 123</p>! Hello email@x.com')
+          print('OK: Todos os modulos basicos inicializados')
+          "
+
+      - name: Upload artefatos (se existirem)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pipeline-artifacts
+          path: |
+            models/*.joblib
+            docs/*.json
+          if-no-files-found: ignore
+          retention-days: 7
