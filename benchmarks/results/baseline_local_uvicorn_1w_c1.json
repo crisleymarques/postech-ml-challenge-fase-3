@@ -1,0 +1,86 @@
+{
+  "benchmark_name": "baseline_latency_predict",
+  "version": "1.0",
+  "environment": {
+    "benchmark_time_utc": "2026-09-12T15:48:55.225581+00:00",
+    "python_version": "3.13.13",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "system": "Windows",
+    "release": "11",
+    "machine": "AMD64",
+    "node": "nb",
+    "cpu_brand": "Intel64 Family 6 Model 140 Stepping 2, GenuineIntel",
+    "cpu_count_logical": 8,
+    "memory_total_bytes": null,
+    "memory_total_gb": null,
+    "target_url": "http://127.0.0.1:8000",
+    "containerized": false,
+    "configured_workers": 1,
+    "configured_cpus": "1.0"
+  },
+  "api_health_snapshot": {
+    "status": "healthy",
+    "model_loaded": true,
+    "model_name": "urgency_classifier",
+    "model_metadata": {
+      "model_name": "logistic_regression",
+      "n_train": 11550,
+      "accuracy": 0.6832,
+      "f1_macro": 0.6623,
+      "created_date": "2026-09-12T12:47:05.097133",
+      "pipeline_steps": [
+        "tfidf",
+        "classifier"
+      ]
+    },
+    "app_version": "1.0.0"
+  },
+  "parameters": {
+    "warmup_requests": 100,
+    "benchmark_requests": 1000,
+    "concurrency": 1,
+    "return_probabilities": true,
+    "n_payloads": 7,
+    "payload_keys": [
+      "urgente",
+      "atencao",
+      "normal",
+      "cardio",
+      "oncologia",
+      "gastro",
+      "neurologia"
+    ]
+  },
+  "warmup": {
+    "count": 100,
+    "min_ms": 3.496,
+    "max_ms": 10.243,
+    "avg_ms": 4.441,
+    "std_ms": 0.797,
+    "p50_ms": 4.315,
+    "p75_ms": 4.809,
+    "p90_ms": 5.183,
+    "p95_ms": 5.319,
+    "p99_ms": 5.697,
+    "success": 100,
+    "failed": 0
+  },
+  "benchmark": {
+    "count": 1000,
+    "min_ms": 2.775,
+    "max_ms": 29.54,
+    "avg_ms": 3.522,
+    "std_ms": 0.956,
+    "p50_ms": 3.387,
+    "p75_ms": 3.819,
+    "p90_ms": 4.18,
+    "p95_ms": 4.391,
+    "p99_ms": 4.974,
+    "success": 1000,
+    "failed": 0,
+    "total_duration_s": 3.925,
+    "throughput_rps": 254.791,
+    "success_rate_pct": 100.0
+  },
+  "errors_sample": []
+}

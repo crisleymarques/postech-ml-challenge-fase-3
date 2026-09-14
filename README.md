@@ -9,6 +9,10 @@ Inclui um pipeline de treinamento, análise exploratória e **API FastAPI para i
 
 Dataset: **Medical Abstracts TC Corpus Dataset** (14.438 amostras).
 
+
+![CI Status](https://github.com/crisleymarques/postech-ml-challenge-fase-3/actions/workflows/ci.yml/badge.svg?branch=classificacao_laudos_fastapi)
+
+
 ---
 
 ## Estrutura de Pastas
@@ -19,7 +23,8 @@ postech-ml-challenge-fase-3/
 │   └── raw/                      # Dataset original (3 arquivos CSV)
 │   └── processed/              # Dados processados e splits (gitignored)
 ├── docs/
-│   └── DATASET.md                # Documentação detalhada do dataset e mapeamentos
+│   ├── DATASET.md                # Documentação detalhada do dataset e mapeamentos
+│   └── BASELINE_LATENCY.md      # 🆕 Baseline oficial de latência da API
 ├── models/                       # Modelos gerados pelo pipeline (gitignored, .gitkeep)
 ├── notebooks/
 │   ├── EDA_Medical_Abstracts.ipynb # EDA completo (notebook)
@@ -52,10 +57,18 @@ postech-ml-challenge-fase-3/
 ├── .github/
 │   └── workflows/
 │       └── ci.yml             # GitHub Actions CI: lint, testes unitários, smoke tests, smoke API
+├── benchmarks/                     # 🆕 Baseline de latência + benchmark reproduzível
+│   ├── __init__.py
+│   ├── baseline_latency.py    # Script de benchmark (CLI)
+│   ├── payloads.json       # 7 casos reais de laudos
+│   └── results/            # Resultados JSON salvos
 ├── run_pipeline.py               # Script orquestrador - executa todo o pipeline ML
 ├── run_api.py                    # 🆕 Script rápido para subir a API (uvicorn reload)
-├── pyproject.toml                # Dependências e metadados do projeto (uv)
-├── uv.lock                       # Lockfile de dependências (uv)
+├── Dockerfile                    # 🆕 Container produção (Gunicorn + UvicornWorker, non-root)
+├── Dockerfile.dev                # 🆕 Container dev (uvicorn --reload)
+├── docker-compose.yml            # 🆕 Serviços: api / api-dev / benchmark
+├── .dockerignore                 # 🆕 Otimizado (exclui venv, data, models, .git)
+├── requirements.txt              # Dependências do projeto (inclui FastAPI)
 └── README.md
 ```
 
@@ -112,11 +125,69 @@ Justificativas completas em [docs/DATASET.md](docs/DATASET.md).
 
 ---
 
-<!--
-![CI Status](https://github.com/crisleymarques/postech-ml-challenge-fase-3/actions/workflows/ci.yml/badge.svg?branch=classificacao_laudos_fastapi)
--->
+## 🏛️ Decisão Arquitetural — Estratégia de Deploy em Nuvem
+
+### Por que a arquitetura importa neste projeto?
+
+O sistema classifica laudos médicos em três níveis de urgência (**Normal**, **Atenção**, **Urgente**) para auxiliar a triagem em ambiente hospitalar. A escolha da estratégia de inferência tem impacto direto na segurança do paciente: um paciente classificado como "Urgente" que aguarda um processamento em lote pode ter seu atendimento atrasado com consequências graves.
 
 ---
+
+### Batch vs. Real-time
+
+| Critério | Batch (Processamento em Lote) | Real-time (Inferência Online) ✅ |
+|:---------|:------------------------------|:---------------------------------|
+| **Latência** | Alta — processamento periódico (minutos/horas) | Baixíssima — resposta imediata (~3–5 ms) |
+| **Adequação ao domínio** | ❌ Inaceitável para triagem de urgência | ✅ Ideal: decisão clínica não pode esperar |
+| **Fluxo de dados** | Acumula laudos e processa em bloco | Processa cada laudo assim que chega |
+| **Custo por requisição** | Menor (amortizado no lote) | Ligeiramente maior, mas desprezível para o volume hospitalar |
+| **Complexidade operacional** | Requer orquestração de jobs (Airflow, etc.) | Simples: container sempre ativo via load balancer |
+| **Disponibilidade** | Depende do agendamento do job | 24/7, sem janelas de espera |
+| **Modelo utilizado** | Qualquer — treinamento offline funciona bem | TF-IDF + Regressão Logística → P99 < 5 ms ✅ |
+
+Sendo assim, a estratégia **Real-time (Online Inference)** é a única aceitável para triagem hospitalar. Atrasos oriundos de processamento em batch podem representar risco de vida para pacientes em estado urgente. A latência medida de **P99 ≈ 4,97 ms** comprova que o modelo escolhido é leve suficiente para suportar inferência síncrona em tempo real, mesmo sob carga.
+
+---
+
+### Recomendação de Plataforma Cloud
+
+Como a API já está empacotada em um container Docker (com `Dockerfile` de produção seguindo boas práticas: Gunicorn + UvicornWorker, usuário não-root), a escolha natural são **serviços serverless de containers**, que eliminam a necessidade de gerenciar infraestrutura de servidores (sem VMs, sem clusters Kubernetes gerenciados manualmente) e escalam automaticamente conforme a demanda.
+
+| Plataforma | Serviço Recomendado | Destaque |
+|:-----------|:--------------------|:---------|
+| **AWS** | **ECS Fargate** | Integração nativa com ECR (registro de imagens), ALB (balanceamento), CloudWatch (observabilidade) e IAM (segurança). Ideal para quem já usa o ecossistema AWS. |
+| **GCP** | **Cloud Run** | Serviço mais simples de configurar para containers stateless. Escala até zero quando ocioso (custo zero em idle). Excelente para protótipos e MVPs hospitalares. |
+| **Azure** | **Azure Container Apps** | Integrado ao ecossistema Microsoft/HIPAA-compliance. Boa escolha para hospitais que já usam Azure Active Directory. |
+
+#### Arquitetura de Referência (AWS ECS Fargate)
+
+```
+[Sistema Hospitalar / Frontend Web]
+          │
+          ▼ HTTPS (REST)
+[Application Load Balancer — ALB]
+          │
+          ▼
+[ECS Fargate — Task Definition]
+  ┌───────────────────────────┐
+  │  Container: urgencia-api  │
+  │  Imagem: ECR repository   │
+  │  Gunicorn + Uvicorn       │
+  │  Port 8000                │
+  └───────────────────────────┘
+          │
+          ▼
+[S3 / EFS — modelos .joblib]   [CloudWatch — logs e métricas]
+```
+
+**Justificativas da escolha arquitetural:**
+
+1. **Stateless por design**: A API não mantém estado de sessão — cada requisição é independente. Isso torna o escalonamento horizontal trivial (ECS Fargate adiciona novas tasks automaticamente).
+2. **Modelo leve (< 50 MB)**: TF-IDF + Regressão Logística cabe facilmente em memória do container sem necessidade de GPU, mantendo custo de instância baixo.
+3. **Auto Scaling**: Configurar `ECS Service Auto Scaling` com métricas de CPU/RPS garante que picos de demanda (chegada de múltiplos pacientes) sejam absorvidos sem degradação.
+4. **Health check nativo**: O endpoint `/health` da API é diretamente compatível com os health checks do ALB/ECS, permitindo substituição automática de tasks não saudáveis.
+5. **Segurança**: O container roda com usuário não-root, e o ALB pode ser configurado com certificado TLS (HTTPS), atendendo aos requisitos de segurança para dados médicos (LGPD / HIPAA).
+
 
 ## 🚀 API de Inferência (FastAPI)
 
@@ -379,3 +450,180 @@ O workflow em `.github/workflows/ci.yml` roda automaticamente em push/pull reque
 | **test** | Testes unitários com pytest em Python 3.10, 3.11, 3.12 (Ubuntu + 3.11 Windows) |
 | **pipeline-check** | Smoke test de carregamento dataset, criação TF-IDF, criação de classificador, clean_text |
 | **api-check** | 🔍 Validação da API: criação do app, rotas, 28 testes de API e teste E2E `/predict` com modelo dummy |
+
+---
+
+## 🐳 Docker (Containerização da API)
+
+### Pré-requisitos
+- **Docker Desktop** (Windows/macOS) ou **Docker Engine** (Linux) rodando
+- O modelo `models/urgency_classifier.joblib` deve existir (gerado por `python run_pipeline.py`)
+
+### Build + Execução Rápida (docker compose)
+
+```bash
+# Build + subir API em background
+docker compose up --build -d api
+
+# Ver logs
+docker compose logs -f api
+
+# Health check
+curl http://localhost:8000/health
+
+# Parar e remover
+docker compose down
+```
+
+A imagem expõe a API na **porta 8000**. Swagger UI em: `http://localhost:8000/docs`
+
+### Build Manual (sem docker compose)
+
+```bash
+# Build da imagem
+docker build -t postech-ml-challenge/api:latest .
+
+# Executar container (1 worker, 1 vCPU, 2GB RAM)
+docker run --rm -d --name urgencia-api \
+  -p 8000:8000 \
+  --cpus=1.0 \
+  --memory=2g \
+  -v ./models:/app/models:ro \
+  -v ./data:/app/data:ro \
+  -e WORKERS=1 \
+  -e WORKER_THREADS=4 \
+  postech-ml-challenge/api:latest
+```
+
+### Serviços do `docker-compose.yml`
+
+| Serviço | Imagem | Descrição | Porta |
+|:--------|:-------|:----------|:-----:|
+| **`api`** | `Dockerfile` (prod, `gunicorn + uvicorn worker`, não-root) | Servidor de produção | 8000:8000 |
+| `api-dev` | `Dockerfile.dev` (uvicorn --reload, hot reload) | Desenvolvimento | 8001:8000 |
+| `benchmark` | `python:3.11-slim` (executa `baseline_latency.py`) | Benchmark automático contra `api` após healthcheck | — |
+
+### Variáveis de Ambiente (container)
+
+Todas as configurações da API podem ser sobrescritas via `environment` no docker-compose
+ou `-e VAR=valor` no docker run:
+
+| Variável | Default | Descrição |
+|:---------|:--------|:----------|
+| `WORKERS` | `1` | Número de workers Gunicorn (escalar = maior throughput) |
+| `WORKER_THREADS` | `4` | Threads por worker |
+| `TIMEOUT` | `120` | Timeout de request em segundos |
+| `PORT` | `8000` | Porta interna do container |
+| `MODELS_DIR` | `/app/models` | Diretório com `.joblib` |
+| `REQUEST_TEXT_MIN_LENGTH` | `10` | Validação de tamanho mínimo de texto |
+| `REQUEST_TEXT_MAX_LENGTH` | `50000` | Validação de tamanho máximo |
+| `REQUEST_BATCH_MAX_ITEMS` | `100` | Limite de itens no endpoint `/predict/batch` |
+
+### Limites de Recursos (CPUs/Memória) configuráveis
+
+Por padrão a API `api` tem:
+```yaml
+cpus: 1.0
+mem_limit: 2g
+```
+
+Escolha valores diferentes via variáveis de ambiente (ex: 4 workers / 2 CPUs):
+```bash
+WORKERS=4 API_CPUS=2.0 docker compose up --build -d api
+```
+
+---
+
+## ⚖️ Baseline de Latência & Benchmark
+
+Documento completo (oficial) em: 👉 **[docs/BASELINE_LATENCY.md](docs/BASELINE_LATENCY.md)**
+
+Arquivo JSON bruto do resultado oficial V1:
+👉 `benchmarks/results/baseline_local_uvicorn_1w_c1.json`
+
+### Baseline V1 — Resultado Oficial (1 worker / 1 vCPU / concorrência=1)
+
+| Métrica | Valor |
+|:--------|:-----:|
+| **Média** | **3,52 ms** |
+| **P50 (mediana)** | **3,39 ms** |
+| **P90** | 4,18 ms |
+| **P95** | 4,39 ms |
+| **P99** | **4,97 ms** |
+| Mínimo | 2,78 ms |
+| Máximo | 29,54 ms |
+| **Throughput (RPS)** | **254,79 req/s** |
+| **Taxa de sucesso** | **100%** (1000/1000) |
+
+### Como Rodar o Benchmark
+
+#### Modo Docker (baseline reproduzível — recomendado)
+
+```bash
+# 1. Gere o modelo (uma vez):
+python run_pipeline.py --model logistic_regression
+
+# 2. Suba a API em container com 1 worker (baseline default):
+WORKERS=1 API_CPUS=1.0 docker compose up --build -d api
+
+# 3. Execute o benchmark (100 warm-up + 1000 requests, conc=1):
+python benchmarks/baseline_latency.py \
+  --url http://localhost:8000 \
+  --warmup 100 \
+  --requests 1000 \
+  --concurrency 1 \
+  --workers 1 \
+  --cpus "1.0" \
+  --output benchmarks/results/baseline_v2_docker.json
+```
+
+#### Modo Benchmark Service (tudo em container, só precisar do Docker)
+
+```bash
+# Sobe a API + roda benchmark automaticamente (aguarda healthcheck)
+docker compose up --build benchmark
+```
+
+#### Flags do `baseline_latency.py` (CLI completa):
+
+| Flag | Default | Descrição |
+|:-----|:--------|:----------|
+| `--url` | `http://localhost:8000` | URL base da API |
+| `--warmup` | `50` | Requisições de warm-up |
+| `--requests` | `500` | Requisições do benchmark real |
+| `--concurrency` | `1` | Nível de concorrência (1 = latência isolada; >1 = throughput) |
+| `--workers` | None | **Documentação apenas** — workers configurados (salvos no JSON) |
+| `--cpus` | None | **Documentação apenas** — CPUs alocadas (salvos no JSON) |
+| `--no-probabilities` | OFF | Não enviar `return_probabilities` |
+| `--output` | `benchmarks/results/baseline_<timestamp>.json` | Arquivo JSON de saída |
+| `--skip-warmup` | OFF | Pular warm-up |
+| `--timeout-health` | `120` | Segundos máximos aguardando `/health` ficar 200 |
+
+#### Concorrência alta (medir throughput):
+```bash
+# 2.000 requisições com 32 conexões simultâneas
+python benchmarks/baseline_latency.py \
+  --requests 2000 --concurrency 32 \
+  --output benchmarks/results/thr_c32.json
+```
+
+### Estrutura da Pasta de Benchmark
+
+```
+benchmarks/
+├── __init__.py
+├── baseline_latency.py     # CLI principal do benchmark
+├── payloads.json           # 7 casos reais (urgente / atenção / normal + 4 derivados)
+└── results/                 # Resultados JSON salvos
+    └── baseline_local_uvicorn_1w_c1.json   # Baseline oficial V1
+```
+
+---
+
+### Sugestão de próximas etapas (comparação de otimizações):
+
+1. `WORKERS=2`, `concurrency=2` → Throughput
+2. Converter sklearn → **ONNX Runtime**
+3. Desativar `return_probabilities` (código cliente)
+4. Docker em WSL2 ou Linux vs. Windows host
+

@@ -1,0 +1,79 @@
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: postech-ml-challenge/api:latest
+    container_name: urgencia-medica-api
+    ports:
+      - "8000:8000"
+    environment:
+      - HOST=0.0.0.0
+      - PORT=8000
+      - WORKERS=${WORKERS:-1}
+      - WORKER_THREADS=${WORKER_THREADS:-4}
+      - TIMEOUT=120
+      - MODELS_DIR=/app/models
+      - REQUEST_TEXT_MIN_LENGTH=10
+      - REQUEST_TEXT_MAX_LENGTH=50000
+      - REQUEST_BATCH_MAX_ITEMS=100
+    volumes:
+      - ./models:/app/models:ro
+      - ./data:/app/data:ro
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    cpuset: ${API_CPUSET:-}
+    mem_limit: ${API_MEM_LIMIT:-2g}
+    cpus: ${API_CPUS:-1.0}
+    deploy:
+      resources:
+        limits:
+          cpus: ${API_CPUS:-1.0}
+          memory: ${API_MEM_LIMIT:-2g}
+
+  api-dev:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    image: postech-ml-challenge/api-dev:latest
+    container_name: urgencia-medica-api-dev
+    ports:
+      - "8001:8000"
+    environment:
+      - DEBUG=True
+    volumes:
+      - .:/app
+      - ./models:/app/models:ro
+      - ./data:/app/data:ro
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    restart: unless-stopped
+
+  benchmark:
+    image: python:3.11-slim-bookworm
+    container_name: urgencia-medica-benchmark
+    depends_on:
+      api:
+        condition: service_healthy
+    working_dir: /benchmark
+    volumes:
+      - ./benchmarks:/benchmark
+      - ./requirements.txt:/tmp/requirements.txt:ro
+    environment:
+      - BENCHMARK_TARGET_URL=http://api:8000
+      - BENCHMARK_WARMUP_REQUESTS=50
+      - BENCHMARK_TOTAL_REQUESTS=500
+    command: >
+      sh -c "
+        pip install --no-cache-dir -r /tmp/requirements.txt httpx numpy &&
+        python baseline_latency.py
+          --url $${BENCHMARK_TARGET_URL}
+          --warmup $${BENCHMARK_WARMUP_REQUESTS}
+          --requests $${BENCHMARK_TOTAL_REQUESTS}
+          --output /benchmark/results/baseline_docker.json
+      "
+    network_mode: "service:api"
