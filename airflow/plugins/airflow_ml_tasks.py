@@ -250,16 +250,11 @@ def task_persist_model_and_metrics(**context) -> Dict[str, Any]:
     metadata = train_info["metadata"] or {}
 
     paths = prep_info["split_paths"]
-    df_train = pd.read_csv(paths["train_csv"])
-    X_train_s = df_train["medical_abstract"].fillna("").astype(str)
-    y_train = df_train["urgency_label"].astype(int).tolist()
 
     import joblib as jl
     vec = jl.load(vec_path)
-    X_train_vec = vec.transform(X_train_s)
-
-    clf = create_classifier(model_name)
-    clf.fit(X_train_vec, y_train)
+    tmp_artifact = jl.load(tmp_model_path)
+    clf = tmp_artifact["model"]
 
     final_pipeline = SkPipeline(steps=[("tfidf", vec), ("classifier", clf)])
 
