@@ -1,0 +1,84 @@
+{
+  "generated_at_utc": "2026-09-14T01:40:42.247384Z",
+  "methodology": {
+    "warmup_discarded": 500,
+    "measured_requests": 5000,
+    "concurrency_synchronous": 1,
+    "probabilities_enabled": true,
+    "in_process_benchmark": true,
+    "seed": 42,
+    "notes": "Benchmark direto no Python, sem overhead HTTP/JSON/stack FastAPI. Mede latencia real de inferencia sklearn vs onnx com mesmos textos, sequencial, 1 worker."
+  },
+  "environment": {
+    "python_version": "3.13.13",
+    "python_implementation": "CPython",
+    "platform_system": "Windows",
+    "platform_release": "11",
+    "platform_version": "10.0.26200",
+    "machine_arch": "AMD64",
+    "cpu_brand": "Intel64 Family 6 Model 140 Stepping 2, GenuineIntel",
+    "cpu_count_logical": 8,
+    "ram_total_gb": 15.74,
+    "ram_available_gb": 0.77,
+    "pkg_sklearn_version": "1.8.0",
+    "pkg_onnxruntime_version": "1.30.0",
+    "pkg_skl2onnx_version": "1.20.0",
+    "pkg_onnx_version": "1.18.0",
+    "pkg_numpy_version": "2.4.4",
+    "pkg_pandas_version": "2.3.3"
+  },
+  "texts_source": "payloads.json",
+  "comparison": {
+    "latency_mean_reduction_pct": 72.92,
+    "throughput_increase_pct": 290.36,
+    "p99_reduction_pct": 72.05
+  },
+  "runs": [
+    {
+      "backend": "sklearn",
+      "n_warmup": 500,
+      "n_requests": 5000,
+      "probabilities_enabled": true,
+      "wall_time_seconds": 5.265433,
+      "throughput_rps": 949.5895,
+      "latency_ms": {
+        "min": 0.6272,
+        "max": 3.0207,
+        "mean": 0.993226,
+        "median": 0.9668,
+        "std": 0.177575,
+        "p1": 0.737093,
+        "p5": 0.78769,
+        "p25": 0.8834,
+        "p50": 0.9668,
+        "p75": 1.060725,
+        "p90": 1.16631,
+        "p95": 1.285465,
+        "p99": 1.669612
+      }
+    },
+    {
+      "backend": "onnx",
+      "n_warmup": 500,
+      "n_requests": 5000,
+      "probabilities_enabled": true,
+      "wall_time_seconds": 1.348859,
+      "throughput_rps": 3706.8378,
+      "latency_ms": {
+        "min": 0.175,
+        "max": 0.847,
+        "mean": 0.268919,
+        "median": 0.2614,
+        "std": 0.052313,
+        "p1": 0.1943,
+        "p5": 0.2074,
+        "p25": 0.2364,
+        "p50": 0.2614,
+        "p75": 0.290425,
+        "p90": 0.32023,
+        "p95": 0.345115,
+        "p99": 0.46673
+      }
+    }
+  ]
+}
