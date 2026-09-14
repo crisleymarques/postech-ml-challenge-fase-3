@@ -54,7 +54,8 @@ postech-ml-challenge-fase-3/
 │       └── ci.yml             # GitHub Actions CI: lint, testes unitários, smoke tests, smoke API
 ├── run_pipeline.py               # Script orquestrador - executa todo o pipeline ML
 ├── run_api.py                    # 🆕 Script rápido para subir a API (uvicorn reload)
-├── requirements.txt              # Dependências do projeto (inclui FastAPI)
+├── pyproject.toml                # Dependências e metadados do projeto (uv)
+├── uv.lock                       # Lockfile de dependências (uv)
 └── README.md
 ```
 
@@ -305,9 +306,13 @@ print(resp.json())
 
 ### 1. Instalar dependências
 
+O projeto usa [uv](https://docs.astral.sh/uv/) como gerenciador de dependências:
+
 ```bash
-pip install -r requirements.txt
+uv sync
 ```
+
+> Se não tiver `uv` instalado: `curl -LsSf https://astral.sh/uv/install.sh | sh`
 
 ### 2. Executar o EDA
 
@@ -335,7 +340,7 @@ python run_api.py
 ### 5. Rodar TODOS os testes unitários e integrados
 
 ```bash
-pytest tests/ -v
+uv run pytest tests/ -v
 ```
 
 Atualmente são **74 testes cobrindo**:
