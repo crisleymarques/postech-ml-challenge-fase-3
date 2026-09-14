@@ -17,10 +17,3 @@ dependencies = [
     "seaborn>=0.13.2",
     "wordcloud>=1.9.6",
 ]
-
-[project.scripts]
-postech-ml-challenge-fase-3 = "postech_ml_challenge_fase_3:main"
-
-[build-system]
-requires = ["uv_build>=0.12.13,<0.13.0"]
-build-backend = "uv_build"
