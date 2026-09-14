@@ -72,14 +72,13 @@ services:
     working_dir: /benchmark
     volumes:
       - ./benchmarks:/benchmark
-      - ./requirements.txt:/tmp/requirements.txt:ro
     environment:
       - BENCHMARK_TARGET_URL=http://api:8000
       - BENCHMARK_WARMUP_REQUESTS=50
       - BENCHMARK_TOTAL_REQUESTS=500
     command: >
       sh -c "
-        pip install --no-cache-dir -r /tmp/requirements.txt httpx numpy &&
+        pip install --no-cache-dir httpx numpy &&
         python baseline_latency.py
           --url $${BENCHMARK_TARGET_URL}
           --warmup $${BENCHMARK_WARMUP_REQUESTS}

@@ -35,7 +35,6 @@ DEFAULT_ARGS: Dict[str, Any] = {
     "retry_exponential_backoff": True,
     "execution_timeout": timedelta(minutes=45),
     "max_retry_delay": timedelta(minutes=5),
-    "provide_context": True,
 }
 
 

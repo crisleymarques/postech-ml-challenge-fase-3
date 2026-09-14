@@ -2,59 +2,65 @@ name: CI - Pipeline NLP de Urgência Médica
 
 on:
   push:
-    branches: [main, master, "develop", "feature/*", "autom/*"]
+    branches: [main, master, "develop", "feature/*"]
   pull_request:
     branches: [main, master, develop]
 
 env:
   PYTHONUNBUFFERED: "1"
+  UV_CACHE_DIR: /tmp/.uv-cache
 
 jobs:
-  test:
-    name: Testes Unitários (Python ${{ matrix.python-version }} / ${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest]
-        python-version: ["3.10", "3.11", "3.12"]
-        include:
-          - os: windows-latest
-            python-version: "3.11"
+  lint-check:
+    name: Verificação de Sintaxe e Estilo
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
 
+      - name: Instalar uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - name: Setup Python 3.13
+        run: uv python install 3.13
+
+      - name: Syntax Check (py_compile)
+        run: |
+          uv run python -m py_compile sources/config.py sources/data_loader.py sources/preprocessing.py sources/model.py pipelines/feature_pipeline.py run_pipeline.py app/__init__.py app/config.py app/schemas.py app/exceptions.py app/main.py app/services/__init__.py app/services/model_service.py tests/*.py
+          echo "Sintaxe OK em todos os módulos (source + pipelines + app + tests)"
+
+  test:
+    name: Testes Unitários
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout do código
         uses: actions/checkout@v4
 
-      - name: Setup Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v5
+      - name: Instalar uv
+        uses: astral-sh/setup-uv@v6
         with:
-          python-version: ${{ matrix.python-version }}
-          cache: "pip"
+          enable-cache: true
+
+      - name: Setup Python 3.13
+        run: uv python install 3.13
 
       - name: Instalar dependências
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install -r requirements.txt pytest
-          python -m pip install nltk
+        run: uv sync
 
       - name: Criar diretórios necessários
-        run: |
-          mkdir -p data/processed models
+        run: mkdir -p data/processed models
 
       - name: Rodar testes unitários com pytest
         run: |
-          python -m pytest tests/ -v --tb=short --color=yes -p no:cacheprovider
-        env:
-          PYTHONDONTWRITEBYTECODE: "1"
+          uv run pytest tests/ -v --tb=short --color=yes --junitxml=test-results/results.xml
 
-      - name: Upload artefato de relatório de testes (se falhar)
+      - name: Upload relatório de testes (se falhar)
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: pytest-results-${{ matrix.os }}-py${{ matrix.python-version }}
-          path: |
-            .pytest_cache/
+          name: pytest-results
+          path: test-results/
           retention-days: 3
 
   pipeline-check:
@@ -65,20 +71,20 @@ jobs:
       - name: Checkout do código
         uses: actions/checkout@v4
 
-      - name: Setup Python 3.11
-        uses: actions/setup-python@v5
+      - name: Instalar uv
+        uses: astral-sh/setup-uv@v6
         with:
-          python-version: "3.11"
-          cache: "pip"
+          enable-cache: true
+
+      - name: Setup Python 3.13
+        run: uv python install 3.13
 
       - name: Instalar dependências
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install -r requirements.txt
+        run: uv sync
 
       - name: Validar carregamento e módulos básicos
         run: |
-          python -c "
+          uv run python -c "
           import sys
           sys.path.insert(0, '.')
           from sources.config import setup_dirs, TRAIN_FILE, TEST_FILE, LABELS_FILE
@@ -109,7 +115,6 @@ jobs:
             docs/*.json
           if-no-files-found: ignore
           retention-days: 7
-
   api-check:
     name: Testes da API FastAPI (health + predict)
     runs-on: ubuntu-latest
@@ -118,16 +123,16 @@ jobs:
       - name: Checkout do código
         uses: actions/checkout@v4
 
-      - name: Setup Python 3.11
-        uses: actions/setup-python@v5
+      - name: Instalar uv
+        uses: astral-sh/setup-uv@v6
         with:
-          python-version: "3.11"
-          cache: "pip"
+          enable-cache: true
 
-      - name: Instalar dependências (incluindo FastAPI)
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install -r requirements.txt
+      - name: Setup Python 3.13
+        run: uv python install 3.13
+
+      - name: Instalar dependências
+        run: uv sync
 
       - name: Criar diretórios necessários
         run: |
@@ -135,7 +140,7 @@ jobs:
 
       - name: Verificar importação do app e criação
         run: |
-          python -c "
+          uv run python -c "
           import sys
           sys.path.insert(0, '.')
           from app.main import create_app
@@ -149,11 +154,11 @@ jobs:
 
       - name: Rodar testes específicos da API
         run: |
-          python -m pytest tests/test_api.py -v --tb=short --color=yes -p no:cacheprovider
+          uv run python -m pytest tests/test_api.py -v --tb=short --color=yes -p no:cacheprovider
 
       - name: Teste end-to-end com TestClient (integração)
         run: |
-          python -c "
+          uv run python -c "
           import sys, tempfile, os
           sys.path.insert(0, '.')
           import pandas as pd
@@ -186,46 +191,32 @@ jobs:
 
           from fastapi.testclient import TestClient
           from app.main import create_app
-          client = TestClient(create_app())
-
-          r = client.get('/health')
-          assert r.status_code == 200, f'health: {r.status_code} {r.text}'
-          assert r.json()['status'] == 'healthy', f'health status: {r.json()}'
-          print('OK: /health healthy')
-
-          r = client.post('/predict', json={'text': 'acute myocardial infarction chest pain ST elevation urgent angioplasty', 'return_probabilities': True})
-          assert r.status_code == 200, f'predict: {r.status_code} {r.text}'
-          body = r.json()
-          assert 'predicted_label' in body and 'predicted_name' in body and 'probabilities' in body
-          print(f'OK: /predict -> {body[\"predicted_name\"]} probs={body[\"probabilities\"]}')
-
-          r = client.post('/predict', json={})
-          assert r.status_code == 422, f'validation should be 422 got {r.status_code}'
-          body = r.json()
-          assert 'traceback' not in str(body).lower(), 'stack trace exposto!'
-          assert body.get('error') == 'VALIDATION_ERROR', f'erro errado: {body}'
-          print(f'OK: 422 retornou erro formatado corretamente (sem stack)')
-
-          r = client.post('/predict/batch', json={'items': [
-              {'text': 'acute myocardial infarction chest pain'},
-              {'text': 'chronic gastritis proton pump inhibitor dietary'},
-          ]})
-          assert r.status_code == 200
-          assert r.json()['total_items'] == 2
-          print(f'OK: /predict/batch total={r.json()[\"total_items\"]}')
-
-          print('API E2E OK')
+          with TestClient(create_app()) as client:
+              r = client.get('/health')
+              assert r.status_code == 200, f'health: {r.status_code} {r.text}'
+              assert r.json()['status'] == 'healthy', f'health status: {r.json()}'
+              print('OK: /health healthy')
+    
+              r = client.post('/predict', json={'text': 'acute myocardial infarction chest pain ST elevation urgent angioplasty', 'return_probabilities': True})
+              assert r.status_code == 200, f'predict: {r.status_code} {r.text}'
+              body = r.json()
+              assert 'predicted_label' in body and 'predicted_name' in body and 'probabilities' in body
+              print(f'OK: /predict -> {body[\"predicted_name\"]} probs={body[\"probabilities\"]}')
+    
+              r = client.post('/predict', json={})
+              assert r.status_code == 422, f'validation should be 422 got {r.status_code}'
+              body = r.json()
+              assert 'traceback' not in str(body).lower(), 'stack trace exposto!'
+              assert body.get('error') == 'VALIDATION_ERROR', f'erro errado: {body}'
+              print(f'OK: 422 retornou erro formatado corretamente (sem stack)')
+    
+              r = client.post('/predict/batch', json={'items': [
+                  {'text': 'acute myocardial infarction chest pain'},
+                  {'text': 'chronic gastritis proton pump inhibitor dietary'},
+              ]})
+              assert r.status_code == 200
+              assert r.json()['total_items'] == 2
+              print(f'OK: /predict/batch total={r.json()[\"total_items\"]}')
+    
+              print('API E2E OK')
           "
-
-  lint-check:
-    name: Verificação de Sintaxe e Estilo
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-      - name: Syntax Check (py_compile) - todos modulos + API
-        run: |
-          python -m py_compile sources/config.py sources/data_loader.py sources/preprocessing.py sources/model.py pipelines/feature_pipeline.py run_pipeline.py app/__init__.py app/config.py app/schemas.py app/exceptions.py app/main.py app/services/__init__.py app/services/model_service.py tests/*.py
-          echo "Syntaxe OK em todos os módulos (source + pipelines + app + tests)"

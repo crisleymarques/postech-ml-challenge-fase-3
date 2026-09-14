@@ -37,7 +37,6 @@ RUN echo "[INFO] Pastas data/raw, data/processed, models criadas vazias no build
     && echo "       Os arquivos reais (modelo .joblib e datasets) serao MONTADOS via volumes no docker-compose.ymll:ro" \
     && echo "       Verifique: ./models:/app/models:ro e ./data:/app/data:ro" \
     && chown -R appuser:appuser ${APP_HOME}/data ${APP_HOME}/models || true
-
 USER appuser
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \

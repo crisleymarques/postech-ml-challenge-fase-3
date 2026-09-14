@@ -12,10 +12,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
-
-ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT))
-
 try:
     import numpy as np  # type: ignore
     HAS_NUMPY = True
