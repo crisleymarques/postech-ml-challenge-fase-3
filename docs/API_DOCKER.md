@@ -7,7 +7,7 @@ A API de classificação de laudos médicos recebe um texto de laudo e retorna s
 
 **1. Instalar dependências** (uma vez):
 ```bash
-pip install -r requirements.txt
+uv sync
 ```
 
 **2. Executar o servidor**:

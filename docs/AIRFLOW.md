@@ -267,7 +267,7 @@ docker compose -f docker-compose-airflow.yml restart airflow-scheduler
 Se pretender validar a lógica de todas as tasks **sem** subir o Airflow, use o script de debug standalone (opcional, para desenvolvimento):
 
 ```bash
-# Instale dependências normais do projeto primeiro (pip install -r requirements.txt)
+# Instale dependências normais do projeto primeiro (uv sync)
 python -X utf8 airflow/scripts/_debug_standalone_dag.py   # (ver notas abaixo)
 ```
 

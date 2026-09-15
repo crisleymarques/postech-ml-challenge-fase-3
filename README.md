@@ -38,9 +38,6 @@ cd postech-ml-challenge-fase-3
 
 # Instalando dependências (utilizando uv)
 uv sync
-
-# Ou com pip tradicional:
-pip install -r requirements.txt
 ```
 
 ### 2. Treinamento do Modelo (Pipeline ML)

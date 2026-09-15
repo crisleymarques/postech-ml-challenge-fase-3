@@ -13,11 +13,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-COPY requirements.txt ./
+COPY pyproject.toml uv.lock ./
 
-RUN pip install --upgrade pip setuptools wheel && \
-    pip install --no-cache-dir -r requirements.txt && \
-    pip install --no-cache-dir "gunicorn>=21.2.0"
+RUN pip install --upgrade pip setuptools wheel uv && \
+    uv pip install --system -r pyproject.toml && \
+    uv pip install --system "gunicorn>=21.2.0"
 
 COPY app/         ./app/
 COPY sources/     ./sources/

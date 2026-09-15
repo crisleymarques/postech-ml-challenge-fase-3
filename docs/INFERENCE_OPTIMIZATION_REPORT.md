@@ -180,7 +180,7 @@ Trata-se de **erro numérico truncado em 1 amostra rara do dataset** (probabilid
 
 | Trade-off | Detalhe |
 |:---------:|:--------|
-| **+3 dependências** (65 MB adicionais) | `onnxruntime` 1.30 (~60MB) + `skl2onnx` 1.20 (~4MB) + `onnx` 1.18 (~1MB) adicionados ao `requirements.txt`. |
+| **+3 dependências** (65 MB adicionais) | `onnxruntime` 1.30 (~60MB) + `skl2onnx` 1.20 (~4MB) + `onnx` 1.18 (~1MB) adicionados ao `pyproject.toml`. |
 | **Passo de export offline por retreino** | ONNX requer export `.joblib` → `.onnx` a cada retreino. **Já AUTOMATIZADO** em: `scripts/optimize_model.py`. Pode ser embutido como tarefa final no DAG Airflow (Atividade 5) + CI/CD GitHub Actions. |
 | **Somente CPU (essa versão)** | Build `onnxruntime` CPU. **Futuramente**, se houver máquina GPU: trocar p/ `onnxruntime-gpu` + 1 flag em `OnnxInferenceSessionWrapper(providers=['CUDAExecutionProvider'])` (acelera ainda mais TF-IDF sparse + matmul LogReg). |
 | **Runtime C++ (menos debug visibilidade)** | Difícil inspecionar passo-a-passo vs sklearn pure-python. **Contorno**: wrapper `OnnxInferenceSessionWrapper` guarda logs; Prometheus gauge `model_loaded{backend="onnxruntime_cpu"}` informa backend ativo no Grafana. |
@@ -247,7 +247,7 @@ $env:USE_ONNX="auto"
 
 ```powershell
 # 1) Instalar dependencias
-python -m pip install -r requirements.txt
+uv sync
 
 # 2) Exportar ONNX + validar equivalencia
 python scripts/optimize_model.py --opset 19 --samples -1
