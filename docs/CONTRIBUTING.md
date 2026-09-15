@@ -16,7 +16,7 @@ Utilizamos [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/
 - `docs`: Mudanças exclusivas em documentação (ex: atualizações no README).
 - `test`: Adição ou correção de testes (sem alterar código de produção).
 - `refactor`: Mudança de código que não corrige um bug nem adiciona uma feature (ex: renomear variáveis).
-- `chore`: Atualização de tarefas de build, configuração de pacotes (ex: modificar `requirements.txt` ou `docker-compose.yml`).
+- `chore`: Atualização de tarefas de build, configuração de pacotes (ex: modificar `pyproject.toml` ou `uv.lock`).
 - `perf`: Mudanças de código focadas em melhorar a performance (ex: otimização da latência).
 
 **Exemplos válidos:**
