@@ -250,6 +250,7 @@ ou `-e VAR=valor` no docker run:
 | `REQUEST_TEXT_MIN_LENGTH` | `10` | Validação de tamanho mínimo de texto |
 | `REQUEST_TEXT_MAX_LENGTH` | `50000` | Validação de tamanho máximo |
 | `REQUEST_BATCH_MAX_ITEMS` | `100` | Limite de itens no endpoint `/predict/batch` |
+| `USE_ONNX` | `auto` | Controle do backend ONNX Runtime (`auto`, `1`, `0`). Veja a documentação de Otimização ONNX para mais detalhes. |
 
 ### Limites de Recursos (CPUs/Memória) configuráveis
 
