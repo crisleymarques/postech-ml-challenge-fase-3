@@ -10,16 +10,16 @@ Inclui um pipeline de treinamento, análise exploratória e **API FastAPI para i
 
 ## 📖 Hub de Documentação
 
-O projeto é extenso e foi dividido em tópicos para facilitar o entendimento. Escolha a seção que mais se adequa à sua necessidade:
+Para atender aos requisitos técnicos e de arquitetura definidos para este Tech Challenge, a documentação detalhada da solução foi estruturada nos seguintes artefatos, organizados pela ordem lógica de desenvolvimento:
 
-- **[🤖 API e Docker](docs/API_DOCKER.md)**: Como consumir a API FastAPI, schemas de input/output, tratamento de erro, e como subir a API isolada via Docker/Docker Compose.
-- **[✈️ Orquestração (Airflow)](docs/AIRFLOW.md)**: Guia completo para rodar o pipeline de retreinamento automatizado com Apache Airflow.
-- **[📊 Observabilidade (Prometheus/Grafana)](docs/OBSERVABILITY.md)**: Métricas exportadas, dashboards disponíveis e gerador de tráfego.
-- **[⚖️ Benchmark e Otimização](docs/BASELINE_LATENCY.md)**: Baseline oficial de latência e execução do script de benchmark.
-- **[⚡ Otimização ONNX Runtime](docs/INFERENCE_OPTIMIZATION_REPORT.md)**: Relatório de otimização de inferência com ONNX Runtime (CPU) e comparativo com Scikit-Learn.
-- **[🏛️ Estratégia de Deploy (ADR)](docs/ADR_PRODUCTION_STRATEGY.md)**: Decisões arquiteturais sobre inferência em tempo real vs batch.
-- **[📚 Análise Exploratória e Dataset](docs/DATASET.md)**: Documentação detalhada sobre a origem do dataset e os mapeamentos de target aplicados (disponível no `notebooks/EDA_Medical_Abstracts.ipynb`).
-- **[🛠️ Guia de Contribuição e CI/CD](docs/CONTRIBUTING.md)**: Pipeline do GitHub Actions, testes automáticos, convenção de commits e Definition of Done.
+- **[📚 Análise Exploratória e Dataset](docs/DATASET.md)**: Documentação detalhada sobre a origem do dataset e os mapeamentos de target aplicados (análise completa em `notebooks/EDA_Medical_Abstracts.ipynb`).
+- **[🏛️ Estratégia de Deploy (ADR)](docs/ADR_PRODUCTION_STRATEGY.md)**: Justificativa arquitetural e decisão sobre inferência em tempo real vs processamento em lote.
+- **[🤖 API e Docker](docs/API_DOCKER.md)**: Contrato e endpoints da API FastAPI, schemas de input/output, tratamento de erro, e conteinerização via Docker.
+- **[⚖️ Benchmark e Otimização de Latência](docs/BASELINE_LATENCY.md)**: Documentação do baseline oficial de latência da API e execução do script de benchmark.
+- **[⚡ Otimização ONNX Runtime](docs/INFERENCE_OPTIMIZATION_REPORT.md)**: Relatório técnico de otimização de inferência com ONNX Runtime (CPU) e comparativo com Scikit-Learn.
+- **[📊 Observabilidade (Prometheus/Grafana)](docs/OBSERVABILITY.md)**: Configuração de monitoramento contínuo, métricas exportadas, dashboards provisionados e gerador de tráfego.
+- **[✈️ Orquestração (Airflow)](docs/AIRFLOW.md)**: Guia de arquitetura e operação do pipeline de retreinamento contínuo e automatizado com Apache Airflow.
+- **[🛠️ Guia de Contribuição e CI/CD](docs/CONTRIBUTING.md)**: Pipeline de integração contínua (GitHub Actions), testes automatizados, Definition of Done (DoD) e convenção de commits.
 
 ---
 
