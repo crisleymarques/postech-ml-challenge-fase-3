@@ -18,6 +18,7 @@ x-airflow-common:
     AIRFLOW__CORE__DAGBAG_IMPORT_TIMEOUT: 120
     AIRFLOW__CORE__PARALLELISM: 8
     PIP_USER: "false"
+    _PIP_ADDITIONAL_REQUIREMENTS: 'pyarrow fastparquet joblib pandas numpy scikit-learn nltk'
     PYTHONPATH: /opt/airflow/project:/opt/airflow/project/airflow/plugins
   volumes:
     - ${AIRFLOW_PROJ_DIR:-.}/airflow/dags:/opt/airflow/dags
@@ -49,7 +50,7 @@ services:
       start_period: 5s
     restart: unless-stopped
     ports:
-      - "5432:5432"
+      - "5433:5432"
 
   airflow-webserver:
     <<: *airflow-common
@@ -83,6 +84,9 @@ services:
 
   airflow-init:
     <<: *airflow-common
+    depends_on:
+      postgres:
+        condition: service_healthy
     entrypoint: /bin/bash
     command:
       - -c
@@ -97,7 +101,7 @@ services:
           --role Admin \
           --email admin@example.com \
           --password admin || true && \
-        python -m pip install --user --no-cache-dir pyarrow fastparquet joblib pandas numpy scikit-learn nltk && \
+        python -m pip install --no-cache-dir pyarrow fastparquet joblib pandas numpy scikit-learn nltk && \
         python -c "
         import nltk
         try:
